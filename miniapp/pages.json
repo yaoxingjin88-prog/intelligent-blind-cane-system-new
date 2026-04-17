@@ -1,0 +1,141 @@
+{
+  "pages": [
+    {
+      "path": "pages/login/login",
+      "style": {
+        "navigationBarTitleText": "登录",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/home/home",
+      "style": {
+        "navigationBarTitleText": "首页监控",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/alarm/alarm",
+      "style": {
+        "navigationBarTitleText": "报警管理",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/fence/fence",
+      "style": {
+        "navigationBarTitleText": "电子围栏",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/profile/profile",
+      "style": {
+        "navigationBarTitleText": "个人中心",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/subpages/elder-info/elder-info",
+      "style": {
+        "navigationBarTitleText": "老人信息管理",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/subpages/dnd-settings/dnd-settings",
+      "style": {
+        "navigationBarTitleText": "免打扰设置",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/subpages/system-settings/system-settings",
+      "style": {
+        "navigationBarTitleText": "系统设置",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/subpages/privacy-policy/privacy-policy",
+      "style": {
+        "navigationBarTitleText": "隐私政策",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/subpages/about-us/about-us",
+      "style": {
+        "navigationBarTitleText": "关于我们",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/subpages/feedback/feedback",
+      "style": {
+        "navigationBarTitleText": "意见反馈",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/subpages/message/message",
+      "style": {
+        "navigationBarTitleText": "消息",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/subpages/alarm-detail/alarm-detail",
+      "style": {
+        "navigationBarTitleText": "报警详情",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/device/device",
+      "style": {
+        "navigationBarTitleText": "设备管理",
+        "navigationStyle": "default"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "智能盲杖",
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "backgroundColor": "#F7F8FA"
+  },
+  "tabBar": {
+    "color": "#999999",
+    "selectedColor": "#07c160",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "iconPath": "static/tabbar/home.png",
+        "selectedIconPath": "static/tabbar/home-active.png",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/alarm/alarm",
+        "iconPath": "static/tabbar/alarm.png",
+        "selectedIconPath": "static/tabbar/alarm-active.png",
+        "text": "报警"
+      },
+      {
+        "pagePath": "pages/fence/fence",
+        "iconPath": "static/tabbar/fence.png",
+        "selectedIconPath": "static/tabbar/fence-active.png",
+        "text": "围栏"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "iconPath": "static/tabbar/profile.png",
+        "selectedIconPath": "static/tabbar/profile-active.png",
+        "text": "我的"
+      }
+    ]
+  },
+  "uniIdRouter": {}
+}

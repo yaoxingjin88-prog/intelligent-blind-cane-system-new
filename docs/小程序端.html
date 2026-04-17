@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>智能盲杖系统 - 小程序原型</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 Font Awesome 图标 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#07c160', // 采用类似微信小程序的绿色主题色
+                        danger: '#ee0a24',
+                        warning: '#ff976a',
+                        info: '#1989fa'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f3f4f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Segoe UI, Arial, Roboto, 'PingFang SC', 'miui', 'Hiragino Sans GB', 'Microsoft Yahei', sans-serif; }
+        /* 模拟手机外框 */
+        .mobile-container { width: 100%; max-width: 414px; height: 100vh; max-height: 896px; background-color: #f7f8fa; position: relative; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
+        @media (min-width: 640px) { .mobile-container { height: 850px; border-radius: 36px; border: 8px solid #333; } }
+        /* 隐藏滚动条但保留滚动功能 */
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .map-placeholder { background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%); background-size: cover; position: relative; }
+        .grid-pattern { background-image: radial-gradient(#93c5fd 1px, transparent 1px); background-size: 20px 20px; }
+    </style>
+</head>
+<body>
+
+<div id="app" class="mobile-container flex flex-col">
+    <!-- 顶部状态栏 (模拟) -->
+    <div class="h-12 bg-white/80 backdrop-blur flex justify-between items-center px-5 text-sm font-medium text-gray-800 z-10 sticky top-0 border-b border-gray-100">
+        <span class="text-lg font-bold tracking-wider">{{ pageTitle }}</span>
+        <div class="flex space-x-3 items-center">
+            <i class="fas fa-signal"></i>
+            <i class="fas fa-wifi"></i>
+            <i class="fas fa-battery-three-quarters"></i>
+        </div>
+    </div>
+
+    <!-- 主体内容区 -->
+    <div class="flex-1 overflow-y-auto hide-scrollbar pb-20">
+        
+        <!-- ================= 1. 首页: 实时监控模块 ================= -->
+        <div v-show="activeTab === 'home'" class="fade-in">
+            <!-- 地图与实时位置 -->
+            <div class="h-64 map-placeholder grid-pattern flex flex-col items-center justify-center relative">
+                <div class="absolute top-4 right-4 bg-white p-2 rounded-full shadow-md flex items-center justify-center w-10 h-10 text-gray-600">
+                    <i class="fas fa-layer-group"></i>
+                </div>
+                <div class="absolute bottom-4 right-4 flex flex-col space-y-2">
+                    <!-- 轨迹回放入口 -->
+                    <button class="bg-white p-2 rounded-full shadow-md w-10 h-10 text-primary flex items-center justify-center" @click="activeTab = 'fence'">
+                        <i class="fas fa-route"></i>
+                    </button>
+                    <button class="bg-white p-2 rounded-full shadow-md w-10 h-10 text-gray-600 flex items-center justify-center">
+                        <i class="fas fa-crosshairs"></i>
+                    </button>
+                </div>
+                <!-- 模拟定位点 -->
+                <div class="relative">
+                    <div class="w-12 h-12 bg-primary/20 rounded-full animate-ping absolute -top-2 -left-2"></div>
+                    <div class="w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center shadow-lg relative z-10 border-2 border-white">
+                        <i class="fas fa-walking"></i>
+                    </div>
+                </div>
+                <div class="mt-3 bg-white/90 px-3 py-1 rounded-full text-xs font-bold text-gray-700 shadow-sm">
+                    老人当前位置：科技园南路100号
+                </div>
+            </div>
+
+            <!-- 设备状态面板 -->
+            <div class="px-4 py-4 -mt-4 relative z-10">
+                <div class="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="flex items-center space-x-2">
+                            <i class="fas fa-satellite-dish text-primary"></i>
+                            <span class="font-bold text-gray-800">智能盲杖 (设备在线)</span>
+                        </div>
+                        <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-md">电量 78%</span>
+                    </div>
+                    
+                    <!-- 传感器数据 -->
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="bg-gray-50 rounded-lg p-3 text-center">
+                            <div class="text-gray-400 text-xs mb-1">前方障碍</div>
+                            <div class="text-lg font-bold text-gray-700">1.2 <span class="text-xs font-normal">m</span></div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3 text-center">
+                            <div class="text-gray-400 text-xs mb-1">今日步数</div>
+                            <div class="text-lg font-bold text-gray-700">4,521</div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3 text-center">
+                            <div class="text-gray-400 text-xs mb-1">静止时长</div>
+                            <div class="text-lg font-bold text-gray-700">5 <span class="text-xs font-normal">min</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 快捷报警类型展示 -->
+                <h3 class="font-bold text-gray-800 mt-6 mb-3 px-1">安全守护</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-gradient-to-br from-red-50 to-white rounded-xl p-4 border border-red-100 flex items-center justify-between">
+                        <div>
+                            <div class="font-bold text-gray-800 text-sm">跌倒检测</div>
+                            <div class="text-xs text-gray-500 mt-1">系统已开启</div>
+                        </div>
+                        <div class="w-10 h-10 bg-red-100 text-danger rounded-full flex items-center justify-center">
+                            <i class="fas fa-user-injured"></i>
+                        </div>
+                    </div>
+                    <div class="bg-gradient-to-br from-blue-50 to-white rounded-xl p-4 border border-blue-100 flex items-center justify-between">
+                        <div>
+                            <div class="font-bold text-gray-800 text-sm">一键 SOS</div>
+                            <div class="text-xs text-gray-500 mt-1">长按盲杖按钮</div>
+                        </div>
+                        <div class="w-10 h-10 bg-blue-100 text-info rounded-full flex items-center justify-center">
+                            <i class="fas fa-bell"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= 2. 报警: 报警管理模块 ================= -->
+        <div v-show="activeTab === 'alarm'" class="fade-in bg-gray-50 min-h-full">
+            <div class="flex border-b border-gray-200 bg-white sticky top-0 z-10">
+                <div class="flex-1 text-center py-3 text-sm font-medium border-b-2 border-primary text-primary">全部报警</div>
+                <div class="flex-1 text-center py-3 text-sm font-medium text-gray-500">未读 (2)</div>
+                <div class="flex-1 text-center py-3 text-sm font-medium text-gray-500">已处理</div>
+            </div>
+            
+            <div class="p-4 space-y-3">
+                <!-- 报警卡片循环 (增加点击跳转详情事件) -->
+                <div v-for="alarm in alarms" :key="alarm.id" 
+                     class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 relative overflow-hidden cursor-pointer active:bg-gray-50 transition-colors"
+                     @click="openAlarmDetail(alarm)">
+                    <div class="absolute top-0 left-0 w-1 h-full" :class="alarm.level === 'high' ? 'bg-danger' : (alarm.level === 'medium' ? 'bg-warning' : 'bg-gray-400')"></div>
+                    <div class="flex justify-between items-start mb-2 pl-2">
+                        <div class="flex items-center space-x-2">
+                            <i :class="alarm.icon + (alarm.level === 'high' ? ' text-danger' : (alarm.level === 'medium' ? ' text-warning' : ' text-gray-500'))"></i>
+                            <span class="font-bold text-gray-800 text-sm">{{ alarm.title }}</span>
+                        </div>
+                        <span class="text-xs text-gray-400">{{ alarm.time }}</span>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-3 pl-2">{{ alarm.desc }}</p>
+                    <div class="flex justify-end space-x-2 border-t border-gray-50 pt-2">
+                        <!-- 增加 .stop 修饰符防止事件冒泡导致打开详情时又触发卡片点击 -->
+                        <button class="px-3 py-1.5 rounded-full border border-gray-200 text-xs text-gray-600" @click.stop="showToast('已忽略该报警')">忽略</button>
+                        <button class="px-3 py-1.5 rounded-full bg-primary text-white text-xs shadow-sm" @click.stop="openAlarmDetail(alarm)">立即处理</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= 3. 围栏: 电子围栏 & 轨迹回放模块 ================= -->
+        <div v-show="activeTab === 'fence'" class="fade-in min-h-full flex flex-col">
+            <!-- 模块切换Tab -->
+            <div class="p-4 flex space-x-2 shrink-0">
+                <button class="flex-1 py-2 rounded-lg text-sm font-medium transition-colors"
+                        :class="fenceTab === 'fence' ? 'bg-primary text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600'"
+                        @click="fenceTab = 'fence'">电子围栏</button>
+                <button class="flex-1 py-2 rounded-lg text-sm font-medium transition-colors"
+                        :class="fenceTab === 'track' ? 'bg-primary text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600'"
+                        @click="fenceTab = 'track'">轨迹回放</button>
+            </div>
+
+            <!-- ================= 3.1 电子围栏内容 ================= -->
+            <div v-show="fenceTab === 'fence'" class="px-4 pb-4 fade-in">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold text-gray-800 text-sm">常用守护区域 (2/5)</h3>
+                    <button class="text-primary text-sm flex items-center"><i class="fas fa-plus mr-1"></i> 新建围栏</button>
+                </div>
+
+                <div class="space-y-3">
+                    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-primary">
+                                <i class="fas fa-home"></i>
+                            </div>
+                            <div>
+                                <div class="font-bold text-gray-800 text-sm">家周边</div>
+                                <div class="text-xs text-gray-400 mt-0.5">半径 500米 | 越界报警开启</div>
+                            </div>
+                        </div>
+                        <!-- 开关 -->
+                        <div class="w-10 h-6 bg-primary rounded-full relative cursor-pointer">
+                            <div class="w-5 h-5 bg-white rounded-full absolute right-0.5 top-0.5 shadow"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center text-info">
+                                <i class="fas fa-tree"></i>
+                            </div>
+                            <div>
+                                <div class="font-bold text-gray-800 text-sm">社区公园</div>
+                                <div class="text-xs text-gray-400 mt-0.5">半径 200米 | 越界报警开启</div>
+                            </div>
+                        </div>
+                        <div class="w-10 h-6 bg-primary rounded-full relative cursor-pointer">
+                            <div class="w-5 h-5 bg-white rounded-full absolute right-0.5 top-0.5 shadow"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 模拟围栏地图预览 -->
+                <div class="mt-4 h-48 rounded-xl map-placeholder grid-pattern relative overflow-hidden border border-gray-200">
+                    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                        <div class="w-32 h-32 bg-primary/20 border border-primary rounded-full flex items-center justify-center">
+                            <div class="w-4 h-4 bg-primary rounded-full shadow-lg"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= 3.2 轨迹回放内容 ================= -->
+            <div v-show="fenceTab === 'track'" class="flex-1 flex flex-col fade-in relative">
+                <!-- 顶部日期选择 -->
+                <div class="px-4 pb-3 flex space-x-3 overflow-x-auto hide-scrollbar shrink-0">
+                    <button v-for="date in ['今天', '昨天', '03-15', '03-14']" :key="date"
+                            class="px-4 py-1.5 rounded-full text-xs font-medium border whitespace-nowrap transition-colors"
+                            :class="trackDate === date ? 'bg-primary/10 border-primary text-primary' : 'bg-white border-gray-200 text-gray-600'"
+                            @click="trackDate = date">
+                        {{ date }}
+                    </button>
+                    <button class="px-3 py-1.5 rounded-full text-xs font-medium border bg-white border-gray-200 text-gray-600 flex items-center">
+                        <i class="far fa-calendar-alt mr-1"></i> 更多
+                    </button>
+                </div>
+
+                <!-- 轨迹统计摘要 -->
+                <div class="px-4 pb-3 flex justify-between items-center shrink-0">
+                    <div class="text-xs text-gray-500">总里程: <span class="font-bold text-gray-800 text-sm">3.2 km</span></div>
+                    <div class="text-xs text-gray-500">耗时: <span class="font-bold text-gray-800 text-sm">1h 15m</span></div>
+                </div>
+
+                <!-- 轨迹地图区域 -->
+                <div class="flex-1 map-placeholder grid-pattern relative border-t border-gray-200 overflow-hidden min-h-[250px]">
+                    <!-- 模拟轨迹线 -->
+                    <svg class="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none" viewBox="0 0 100 100">
+                        <path d="M 20 80 Q 30 50 40 60 T 70 30" fill="none" stroke="#07c160" stroke-width="1.5" stroke-dasharray="4" class="opacity-70" />
+                    </svg>
+                    
+                    <!-- 起点与终点标记 -->
+                    <div class="absolute w-6 h-6 bg-blue-500 text-white text-[10px] rounded-full flex items-center justify-center border-2 border-white shadow-md z-10" style="left: 17%; top: 77%;">起</div>
+                    <div class="absolute w-6 h-6 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center border-2 border-white shadow-md z-10" style="left: 67%; top: 27%;">终</div>
+
+                    <!-- 动态模拟的小人 -->
+                    <div class="absolute w-8 h-8 bg-white text-primary rounded-full flex items-center justify-center border-2 border-primary shadow-lg z-20 transition-all duration-75 transform -translate-x-1/2 -translate-y-1/2"
+                         :style="{ left: trackPosition.x + '%', top: trackPosition.y + '%' }">
+                        <i class="fas fa-walking"></i>
+                    </div>
+                </div>
+
+                <!-- 底部播放控制面板 -->
+                <div class="bg-white p-5 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.05)] z-10 shrink-0 border-t border-gray-100 rounded-t-2xl">
+                    <!-- 进度条 -->
+                    <div class="flex items-center space-x-3 mb-4">
+                        <span class="text-[10px] text-gray-400 w-8 text-right">{{ formatTime(playbackProgress) }}</span>
+                        <div class="flex-1 h-2 bg-gray-100 rounded-full relative overflow-hidden">
+                            <div class="absolute top-0 left-0 h-full bg-primary transition-all duration-75" :style="{ width: playbackProgress + '%' }"></div>
+                        </div>
+                        <span class="text-[10px] text-gray-400 w-8">100%</span>
+                    </div>
+                    
+                    <!-- 控制按钮 -->
+                    <div class="flex justify-between items-center px-4">
+                        <div class="text-xs font-bold text-gray-500 w-12 text-center bg-gray-100 py-1 rounded-full cursor-pointer active:bg-gray-200" @click="toggleSpeed">
+                            {{ playbackSpeed }}x
+                        </div>
+                        
+                        <div class="flex space-x-6 items-center">
+                            <button class="text-gray-400 active:text-gray-600 text-lg" @click="resetPlayback"><i class="fas fa-stop"></i></button>
+                            <button class="w-14 h-14 bg-primary text-white rounded-full flex items-center justify-center text-xl shadow-lg shadow-primary/30 active:scale-95 transition-transform" @click="togglePlay">
+                                <i :class="isPlaying ? 'fas fa-pause' : 'fas fa-play ml-1'"></i>
+                            </button>
+                            <button class="text-gray-400 active:text-gray-600 text-lg"><i class="fas fa-step-forward"></i></button>
+                        </div>
+                        
+                        <div class="text-gray-400 text-lg w-12 text-center cursor-pointer active:text-gray-600">
+                            <i class="fas fa-expand"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= 4. 我的: 用户/设备/数据/设置模块 ================= -->
+        <div v-show="activeTab === 'profile'" class="fade-in bg-gray-50 min-h-full pb-6">
+            <!-- 顶部轻量级渐变背景 (替代原有的大块深绿色) -->
+            <div class="bg-gradient-to-b from-[#e6f8ee] to-gray-50 pt-4 pb-20 px-6 relative overflow-hidden">
+                <!-- 柔和的背景光晕装饰 -->
+                <div class="absolute -top-10 -right-10 w-40 h-40 bg-primary/10 rounded-full blur-2xl"></div>
+                <div class="absolute bottom-4 -left-10 w-32 h-32 bg-primary/10 rounded-full blur-2xl"></div>
+            </div>
+
+            <div class="px-4 -mt-16 space-y-4 relative z-10">
+                <!-- 1. 用户认证模块 (改为现代悬浮卡片式) -->
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-16 h-16 bg-gray-50 rounded-full border-2 border-white shadow-sm flex items-center justify-center overflow-hidden">
+                            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&backgroundColor=e0f2fe" alt="头像" class="w-full h-full object-cover">
+                        </div>
+                        <div>
+                            <div class="text-xl font-bold text-gray-800 flex items-center">
+                                张三的家属 <span class="ml-2 text-[10px] bg-green-50 text-primary px-2 py-0.5 rounded border border-green-100">已实名</span>
+                            </div>
+                            <div class="text-gray-500 text-xs mt-1">手机号: 138****8888</div>
+                        </div>
+                    </div>
+                    <!-- 8. 消息通知入口 -->
+                    <div class="relative">
+                        <div class="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center text-gray-600 active:bg-gray-100 transition cursor-pointer">
+                            <i class="fas fa-bell"></i>
+                            <span class="absolute top-2 right-2 w-2 h-2 bg-danger rounded-full border border-white"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 设备绑定模块 -->
+                <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center text-gray-600">
+                            <i class="fas fa-microchip"></i>
+                        </div>
+                        <div>
+                            <div class="font-bold text-gray-800 text-sm">设备管理</div>
+                            <div class="text-xs text-gray-400 mt-0.5">已绑定 1 台设备</div>
+                        </div>
+                    </div>
+                    <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                </div>
+
+                <!-- 7. 数据统计模块 -->
+                <div class="bg-white rounded-xl p-0 shadow-sm border border-gray-100 overflow-hidden">
+                    <div class="p-4 border-b border-gray-50 flex justify-between items-center">
+                        <h3 class="font-bold text-gray-800 text-sm">健康与活动统计</h3>
+                        <span class="text-xs text-gray-400">本周</span>
+                    </div>
+                    <div class="p-4 grid grid-cols-2 gap-4">
+                        <div class="flex flex-col">
+                            <span class="text-xs text-gray-400">日均步数</span>
+                            <span class="text-lg font-bold text-gray-800 mt-1">3,240 <i class="fas fa-arrow-up text-danger text-xs ml-1"></i></span>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-xs text-gray-400">报警次数</span>
+                            <span class="text-lg font-bold text-gray-800 mt-1">2 <i class="fas fa-arrow-down text-primary text-xs ml-1"></i></span>
+                        </div>
+                    </div>
+                    <!-- 模拟图表区域 -->
+                    <div class="px-4 pb-4 h-24 flex items-end justify-between space-x-2">
+                        <div class="w-full bg-blue-100 rounded-t-md h-8 relative"><span class="absolute -top-4 text-[10px] text-gray-400 left-1">一</span></div>
+                        <div class="w-full bg-blue-100 rounded-t-md h-12 relative"><span class="absolute -top-4 text-[10px] text-gray-400 left-1">二</span></div>
+                        <div class="w-full bg-blue-100 rounded-t-md h-10 relative"><span class="absolute -top-4 text-[10px] text-gray-400 left-1">三</span></div>
+                        <div class="w-full bg-primary/80 rounded-t-md h-16 relative shadow-sm"><span class="absolute -top-4 text-[10px] text-gray-600 font-bold left-1">四</span></div>
+                        <div class="w-full bg-blue-100 rounded-t-md h-0"></div>
+                        <div class="w-full bg-blue-100 rounded-t-md h-0"></div>
+                        <div class="w-full bg-blue-100 rounded-t-md h-0"></div>
+                    </div>
+                </div>
+
+                <!-- 9. 设置模块列表 -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div class="flex items-center justify-between p-4 border-b border-gray-50 cursor-pointer active:bg-gray-50 transition" @click="openSubPage('elderInfo')">
+                        <div class="flex items-center text-sm text-gray-700">
+                            <i class="fas fa-user-shield w-6 text-gray-400"></i> 老人信息管理
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                    </div>
+                    <div class="flex items-center justify-between p-4 border-b border-gray-50 cursor-pointer active:bg-gray-50 transition" @click="openSubPage('dndSettings')">
+                        <div class="flex items-center text-sm text-gray-700">
+                            <i class="fas fa-moon w-6 text-gray-400"></i> 免打扰设置
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                    </div>
+                    <div class="flex items-center justify-between p-4 border-b border-gray-50 cursor-pointer active:bg-gray-50 transition" @click="openSubPage('systemSettings')">
+                        <div class="flex items-center text-sm text-gray-700">
+                            <i class="fas fa-cog w-6 text-gray-400"></i> 系统设置 (隐私/关于)
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                    </div>
+                </div>
+                
+                <button class="w-full bg-white text-danger border border-gray-200 rounded-xl py-3 text-sm font-bold shadow-sm mt-4">
+                    退出登录
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ================= 子页面: 老人信息管理 ================= -->
+    <div v-show="currentSubPage === 'elderInfo'" class="absolute inset-0 bg-gray-50 z-[60] flex flex-col fade-in">
+        <div class="h-12 bg-white flex items-center px-4 border-b border-gray-100 shrink-0 sticky top-0">
+            <i class="fas fa-chevron-left text-gray-600 text-lg w-8 cursor-pointer py-2" @click="closeSubPage"></i>
+            <span class="flex-1 text-center font-bold text-gray-800 pr-8">老人信息管理</span>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+                <div class="flex justify-between items-center p-4 border-b border-gray-50">
+                    <span class="text-sm text-gray-700 w-24">姓名</span>
+                    <input type="text" v-model="elderInfo.name" class="flex-1 text-right text-sm text-gray-800 outline-none" placeholder="请输入姓名">
+                </div>
+                <div class="flex justify-between items-center p-4 border-b border-gray-50">
+                    <span class="text-sm text-gray-700 w-24">年龄</span>
+                    <input type="number" v-model="elderInfo.age" class="flex-1 text-right text-sm text-gray-800 outline-none" placeholder="请输入年龄">
+                </div>
+                <div class="flex justify-between items-center p-4 border-b border-gray-50">
+                    <span class="text-sm text-gray-700 w-24">性别</span>
+                    <select v-model="elderInfo.gender" class="flex-1 text-right text-sm text-gray-800 outline-none bg-transparent appearance-none text-right" dir="rtl">
+                        <option value="男">男</option>
+                        <option value="女">女</option>
+                    </select>
+                </div>
+                <div class="flex justify-between items-center p-4 border-b border-gray-50">
+                    <span class="text-sm text-gray-700 w-24">血型</span>
+                    <select v-model="elderInfo.bloodType" class="flex-1 text-right text-sm text-gray-800 outline-none bg-transparent appearance-none" dir="rtl">
+                        <option value="A型">A型</option>
+                        <option value="B型">B型</option>
+                        <option value="AB型">AB型</option>
+                        <option value="O型">O型</option>
+                        <option value="未知">未知</option>
+                    </select>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-4 p-4">
+                <div class="text-sm text-gray-700 mb-2">过往病史及注意事项</div>
+                <textarea v-model="elderInfo.medicalHistory" class="w-full text-sm text-gray-800 outline-none bg-gray-50 rounded p-3 h-24 resize-none" placeholder="例如：高血压、糖尿病、听力障碍等"></textarea>
+            </div>
+            <button class="w-full bg-primary text-white rounded-xl py-3 text-sm font-bold shadow-sm" @click="closeSubPage">保存信息</button>
+        </div>
+    </div>
+
+    <!-- ================= 子页面: 免打扰设置 ================= -->
+    <div v-show="currentSubPage === 'dndSettings'" class="absolute inset-0 bg-gray-50 z-[60] flex flex-col fade-in">
+        <div class="h-12 bg-white flex items-center px-4 border-b border-gray-100 shrink-0 sticky top-0">
+            <i class="fas fa-chevron-left text-gray-600 text-lg w-8 cursor-pointer py-2" @click="closeSubPage"></i>
+            <span class="flex-1 text-center font-bold text-gray-800 pr-8">免打扰设置</span>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4">
+            <div class="text-xs text-gray-500 mb-2 px-1">开启后，在设定时间段内将暂停除SOS和跌倒外的常规通知推送。</div>
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+                <div class="flex justify-between items-center p-4 border-b border-gray-50">
+                    <span class="text-sm text-gray-700">定时免打扰</span>
+                    <!-- 自定义开关组件 -->
+                    <div class="w-12 h-6 rounded-full relative cursor-pointer transition-colors duration-300" 
+                         :class="dndSettings.enabled ? 'bg-primary' : 'bg-gray-300'"
+                         @click="dndSettings.enabled = !dndSettings.enabled">
+                        <div class="w-5 h-5 bg-white rounded-full absolute top-0.5 shadow transition-transform duration-300"
+                             :class="dndSettings.enabled ? 'translate-x-6' : 'translate-x-0.5'"></div>
+                    </div>
+                </div>
+                
+                <div v-show="dndSettings.enabled" class="fade-in">
+                    <div class="flex justify-between items-center p-4 border-b border-gray-50">
+                        <span class="text-sm text-gray-700">开始时间</span>
+                        <input type="time" v-model="dndSettings.startTime" class="text-sm text-gray-800 outline-none bg-transparent">
+                    </div>
+                    <div class="flex justify-between items-center p-4">
+                        <span class="text-sm text-gray-700">结束时间</span>
+                        <input type="time" v-model="dndSettings.endTime" class="text-sm text-gray-800 outline-none bg-transparent">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 子页面: 系统设置 ================= -->
+    <div v-show="currentSubPage === 'systemSettings'" class="absolute inset-0 bg-gray-50 z-[60] flex flex-col fade-in">
+        <div class="h-12 bg-white flex items-center px-4 border-b border-gray-100 shrink-0 sticky top-0">
+            <i class="fas fa-chevron-left text-gray-600 text-lg w-8 cursor-pointer py-2" @click="closeSubPage"></i>
+            <span class="flex-1 text-center font-bold text-gray-800 pr-8">系统设置</span>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="flex items-center justify-between p-4 border-b border-gray-50 cursor-pointer active:bg-gray-50" @click="currentSubPage = 'privacyPolicy'">
+                    <span class="text-sm text-gray-700">用户协议与隐私政策</span>
+                    <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                </div>
+                <div class="flex items-center justify-between p-4 border-b border-gray-50 cursor-pointer active:bg-gray-50">
+                    <span class="text-sm text-gray-700">清除缓存</span>
+                    <span class="text-xs text-gray-400">12.5 MB <i class="fas fa-chevron-right text-gray-300 ml-1"></i></span>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="flex items-center justify-between p-4 border-b border-gray-50 cursor-pointer active:bg-gray-50" @click="currentSubPage = 'aboutUs'">
+                    <span class="text-sm text-gray-700">关于智能盲杖系统</span>
+                    <span class="text-xs text-gray-400">版本 1.0.0 <i class="fas fa-chevron-right text-gray-300 ml-1"></i></span>
+                </div>
+                <div class="flex items-center justify-between p-4 border-b border-gray-50 cursor-pointer active:bg-gray-50">
+                    <span class="text-sm text-gray-700">意见反馈</span>
+                    <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                </div>
+            </div>
+            
+            <div class="text-center text-xs text-gray-400 mt-8">
+                Copyright © 2024 智能盲杖团队
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 子页面: 报警详情 ================= -->
+    <div v-show="currentSubPage === 'alarmDetail'" class="absolute inset-0 bg-gray-50 z-[60] flex flex-col fade-in">
+        <!-- 头部 -->
+        <div class="h-12 bg-white flex items-center px-4 border-b border-gray-100 shrink-0 sticky top-0 z-10">
+            <i class="fas fa-chevron-left text-gray-600 text-lg w-8 cursor-pointer py-2" @click="closeSubPage"></i>
+            <span class="flex-1 text-center font-bold text-gray-800 pr-8">报警详情</span>
+        </div>
+
+        <!-- 内容区 (必须确保 currentAlarm 存在时才渲染) -->
+        <div v-if="currentAlarm" class="flex-1 overflow-y-auto pb-24 relative">
+            <!-- 顶部地图区域展示报警位置 -->
+            <div class="h-64 map-placeholder grid-pattern relative border-b border-gray-200">
+                <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 relative">
+                    <!-- 动态波纹效果 (高危报警红色，中危橙色) -->
+                    <div class="w-16 h-16 rounded-full animate-ping absolute -top-4 -left-4"
+                         :class="currentAlarm.level === 'high' ? 'bg-danger/30' : 'bg-warning/30'"></div>
+                    <!-- 定位点 -->
+                    <div class="w-8 h-8 text-white rounded-full flex items-center justify-center shadow-lg relative z-10 border-2 border-white"
+                         :class="currentAlarm.level === 'high' ? 'bg-danger' : (currentAlarm.level === 'medium' ? 'bg-warning' : 'bg-gray-500')">
+                        <i :class="currentAlarm.icon"></i>
+                    </div>
+                </div>
+                <!-- 模拟位置文字气泡 -->
+                <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white/95 backdrop-blur-sm px-4 py-2 rounded-full text-xs font-bold text-gray-700 shadow flex items-center whitespace-nowrap">
+                    <i class="fas fa-map-marker-alt mr-2" :class="currentAlarm.level === 'high' ? 'text-danger' : 'text-primary'"></i> 
+                    科技园南路100号附近
+                </div>
+            </div>
+
+            <!-- 详情信息卡片 -->
+            <div class="px-4 py-4 -mt-6 relative z-10">
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+                    <div class="flex items-center space-x-3 mb-4 pb-4 border-b border-gray-50">
+                        <div class="w-12 h-12 rounded-full flex items-center justify-center text-xl shrink-0"
+                             :class="currentAlarm.level === 'high' ? 'bg-red-50 text-danger' : (currentAlarm.level === 'medium' ? 'bg-orange-50 text-warning' : 'bg-gray-50 text-gray-500')">
+                            <i :class="currentAlarm.icon"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h2 class="text-lg font-bold text-gray-800">{{ currentAlarm.title }}</h2>
+                            <p class="text-xs text-gray-400 mt-1"><i class="far fa-clock mr-1"></i>{{ currentAlarm.time }}</p>
+                        </div>
+                        <span class="px-2 py-1 text-[10px] font-bold rounded"
+                              :class="currentAlarm.level === 'high' ? 'bg-red-50 text-danger border border-red-100' : 'bg-orange-50 text-warning border border-orange-100'">
+                            待处理
+                        </span>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <span class="text-xs text-gray-400 block mb-1">报警内容</span>
+                            <p class="text-sm text-gray-700 leading-relaxed bg-gray-50 p-3 rounded-lg">{{ currentAlarm.desc }}</p>
+                        </div>
+                        
+                        <!-- 针对跌倒报警给出具体的分析或指导 -->
+                        <div v-if="currentAlarm.type === 'fall'">
+                            <span class="text-xs text-gray-400 block mb-1">系统初步分析</span>
+                            <p class="text-sm text-gray-700 flex items-start">
+                                <i class="fas fa-info-circle text-info mt-0.5 mr-2"></i>
+                                设备检测到异常的加速度突变（可能是撞击），并且随后长时间处于倾倒静止状态。请尽快联系老人确认安全。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部固定操作栏 -->
+        <div v-if="currentAlarm" class="bg-white border-t border-gray-100 p-4 pb-safe absolute bottom-0 w-full flex space-x-3 z-20 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
+            <button class="flex-[0.4] bg-white border border-gray-200 text-gray-700 rounded-xl py-3 text-sm font-bold shadow-sm flex justify-center items-center space-x-2 active:bg-gray-50 transition-colors" @click="showToast('正在呼叫设备...')">
+                <i class="fas fa-phone-alt text-primary"></i>
+                <span>呼叫</span>
+            </button>
+            <button class="flex-[0.6] bg-primary text-white rounded-xl py-3 text-sm font-bold shadow-md shadow-primary/20 flex justify-center items-center active:scale-[0.98] transition-transform" 
+                    @click="showToast('已标记为处理完成'); closeSubPage();">
+                标记已处理
+            </button>
+        </div>
+    </div>
+
+    <!-- ================= 二级子页面: 隐私政策 ================= -->
+    <div v-show="currentSubPage === 'privacyPolicy'" class="absolute inset-0 bg-white z-[70] flex flex-col fade-in">
+        <div class="h-12 bg-white flex items-center px-4 border-b border-gray-100 shrink-0 sticky top-0">
+            <!-- 注意这里的返回逻辑是回到上一级的系统设置 -->
+            <i class="fas fa-chevron-left text-gray-600 text-lg w-8 cursor-pointer py-2" @click="currentSubPage = 'systemSettings'"></i>
+            <span class="flex-1 text-center font-bold text-gray-800 pr-8">隐私政策</span>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5 text-sm text-gray-600 leading-relaxed space-y-4">
+            <h3 class="font-bold text-gray-800 text-base text-center">智能盲杖系统隐私保护指引</h3>
+            <p>本指引更新时间：2024年1月1日</p>
+            <p>欢迎使用智能盲杖系统！我们非常重视您的个人信息和隐私保护。为了提供更优质的守护服务，我们需要收集一些必要信息：</p>
+            
+            <h4 class="font-bold text-gray-800 mt-4">1. 位置信息收集</h4>
+            <p>为了实现**实时位置查看、电子围栏和轨迹回放**功能，当设备处于开机状态时，系统会持续收集智能盲杖的 GPS/基站定位数据。这些数据仅用于家属端查看，系统不会将其用于任何商业营销。</p>
+            
+            <h4 class="font-bold text-gray-800 mt-4">2. 传感器数据处理</h4>
+            <p>盲杖前端的超声波及惯性传感器数据（用于**跌倒检测、避障**等）主要在设备端进行本地计算，仅在触发报警时将状态回传至服务器，以确保响应及时并最大程度保护用户隐私。</p>
+            
+            <h4 class="font-bold text-gray-800 mt-4">3. 信息存储与安全</h4>
+            <p>我们采用业界标准的数据加密技术保护您的账户及老人健康档案（如病史、血型等）。除您授权绑定的家庭成员外，任何第三方均无法访问这些信息。</p>
+        </div>
+    </div>
+
+    <!-- ================= 二级子页面: 关于我们 ================= -->
+    <div v-show="currentSubPage === 'aboutUs'" class="absolute inset-0 bg-gray-50 z-[70] flex flex-col fade-in">
+        <div class="h-12 bg-white flex items-center px-4 border-b border-gray-100 shrink-0 sticky top-0">
+            <i class="fas fa-chevron-left text-gray-600 text-lg w-8 cursor-pointer py-2" @click="currentSubPage = 'systemSettings'"></i>
+            <span class="flex-1 text-center font-bold text-gray-800 pr-8">关于我们</span>
+        </div>
+        <div class="flex-1 overflow-y-auto flex flex-col items-center pt-12 p-4">
+            <!-- 模拟的 Logo 图标 -->
+            <div class="w-20 h-20 bg-primary rounded-2xl shadow-lg flex items-center justify-center text-white mb-4">
+                <i class="fas fa-walking text-4xl"></i>
+            </div>
+            <h2 class="text-xl font-bold text-gray-800">智能盲杖系统</h2>
+            <p class="text-xs text-gray-400 mt-1 mb-8">Version 1.0.0 (Build 240101)</p>
+            
+            <div class="w-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="flex items-center justify-between p-4 border-b border-gray-50 cursor-pointer active:bg-gray-50">
+                    <span class="text-sm text-gray-700">检查新版本</span>
+                    <span class="text-xs text-primary bg-green-50 px-2 py-0.5 rounded">已是最新版</span>
+                </div>
+                <div class="flex items-center justify-between p-4 border-b border-gray-50 cursor-pointer active:bg-gray-50">
+                    <span class="text-sm text-gray-700">功能介绍</span>
+                    <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                </div>
+                <div class="flex items-center justify-between p-4 cursor-pointer active:bg-gray-50">
+                    <span class="text-sm text-gray-700">官方网站</span>
+                    <span class="text-sm text-gray-400">www.smart-cane.com</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部导航栏 -->
+    <div class="bg-white border-t border-gray-200 h-16 flex items-center justify-around pb-safe absolute bottom-0 w-full z-50">
+        <div class="flex flex-col items-center justify-center w-full h-full cursor-pointer" 
+             :class="activeTab === 'home' ? 'text-primary' : 'text-gray-400'"
+             @click="activeTab = 'home'">
+            <i class="fas fa-home text-xl mb-1"></i>
+            <span class="text-[10px]">首页监控</span>
+        </div>
+        <div class="flex flex-col items-center justify-center w-full h-full cursor-pointer relative"
+             :class="activeTab === 'alarm' ? 'text-primary' : 'text-gray-400'"
+             @click="activeTab = 'alarm'">
+            <div class="relative">
+                <i class="fas fa-shield-alt text-xl mb-1"></i>
+                <span class="absolute -top-1 -right-2 bg-danger text-white text-[8px] px-1 rounded-full border border-white">2</span>
+            </div>
+            <span class="text-[10px]">报警管理</span>
+        </div>
+        <div class="flex flex-col items-center justify-center w-full h-full cursor-pointer"
+             :class="activeTab === 'fence' ? 'text-primary' : 'text-gray-400'"
+             @click="activeTab = 'fence'">
+            <i class="fas fa-map-marked-alt text-xl mb-1"></i>
+            <span class="text-[10px]">围栏轨迹</span>
+        </div>
+        <div class="flex flex-col items-center justify-center w-full h-full cursor-pointer"
+             :class="activeTab === 'profile' ? 'text-primary' : 'text-gray-400'"
+             @click="activeTab = 'profile'">
+            <i class="fas fa-user text-xl mb-1"></i>
+            <span class="text-[10px]">我的</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, computed } = Vue;
+
+    const App = {
+        setup() {
+            // 当前激活的底部Tab
+            const activeTab = ref('home');
+            
+            // 当前激活的子页面 (null表示在主页级)
+            const currentSubPage = ref(null);
+
+            // 动态标题
+            const pageTitle = computed(() => {
+                const titles = {
+                    home: '智能盲杖监控',
+                    alarm: '报警处理中心',
+                    fence: '电子围栏与轨迹',
+                    profile: '个人中心'
+                };
+                return titles[activeTab.value];
+            });
+
+            // 围栏页面子Tab状态
+            const fenceTab = ref('fence');
+            
+            // 报警详情状态
+            const currentAlarm = ref(null);
+            
+            const openAlarmDetail = (alarm) => {
+                currentAlarm.value = alarm;
+                currentSubPage.value = 'alarmDetail';
+            };
+
+            // 轨迹回放状态
+            const trackDate = ref('今天');
+            const isPlaying = ref(false);
+            const playbackProgress = ref(0); // 0 到 100
+            const playbackSpeed = ref(1);
+            let playInterval = null;
+
+            // 简单的二次贝塞尔曲线计算，用于模拟轨迹坐标运动
+            const calculatePosition = (t) => {
+                // P0(20,80) -> P1(30,50) -> P2(40,60) -> P3(70,30) 的简化分段模拟
+                const progress = t / 100;
+                let x, y;
+                if (progress < 0.5) {
+                    const p = progress * 2;
+                    x = 20 + (40 - 20) * p;
+                    y = 80 + (60 - 80) * p - Math.sin(p * Math.PI) * 15; // 加点曲线
+                } else {
+                    const p = (progress - 0.5) * 2;
+                    x = 40 + (70 - 40) * p;
+                    y = 60 + (30 - 60) * p + Math.sin(p * Math.PI) * 10;
+                }
+                return { x, y };
+            };
+
+            const trackPosition = computed(() => calculatePosition(playbackProgress.value));
+
+            // 格式化时间显示 (模拟进度条左侧时间)
+            const formatTime = (progress) => {
+                const totalMinutes = 75; // 假设总时长75分钟
+                const current = Math.floor((progress / 100) * totalMinutes);
+                const h = Math.floor(current / 60);
+                const m = current % 60;
+                return `${h ? h + 'h' : ''}${m}m`;
+            };
+
+            // 播放控制逻辑
+            const togglePlay = () => {
+                isPlaying.value = !isPlaying.value;
+                if (isPlaying.value) {
+                    if (playbackProgress.value >= 100) playbackProgress.value = 0;
+                    playInterval = setInterval(() => {
+                        playbackProgress.value += playbackSpeed.value * 0.5;
+                        if (playbackProgress.value >= 100) {
+                            playbackProgress.value = 100;
+                            isPlaying.value = false;
+                            clearInterval(playInterval);
+                        }
+                    }, 50);
+                } else {
+                    clearInterval(playInterval);
+                }
+            };
+
+            const resetPlayback = () => {
+                isPlaying.value = false;
+                playbackProgress.value = 0;
+                clearInterval(playInterval);
+            };
+
+            const toggleSpeed = () => {
+                const speeds = [1, 2, 4];
+                const currentIndex = speeds.indexOf(playbackSpeed.value);
+                playbackSpeed.value = speeds[(currentIndex + 1) % speeds.length];
+            };
+
+
+            // 模拟的报警数据
+            const alarms = ref([
+                { id: 1, type: 'fall', title: '跌倒报警', desc: '设备检测到老人可能发生跌倒，请立即确认！', time: '10分钟前', level: 'high', icon: 'fas fa-user-injured' },
+                { id: 2, type: 'out_of_bounds', title: '越界提醒', desc: '设备已离开【家周边】电子围栏区域。', time: '1小时前', level: 'medium', icon: 'fas fa-map-marker-alt' },
+                { id: 3, type: 'low_battery', title: '低电量报警', desc: '当前设备电量剩余 15%，请提醒充电。', time: '昨天 18:30', level: 'low', icon: 'fas fa-battery-empty' },
+                { id: 4, type: 'stationary', title: '长时间静止', desc: '设备已连续静止超过3小时。', time: '昨天 14:00', level: 'low', icon: 'fas fa-hourglass-half' },
+            ]);
+
+            // 表单数据绑定：老人信息
+            const elderInfo = ref({
+                name: '张建国',
+                age: 72,
+                gender: '男',
+                bloodType: 'O型',
+                medicalHistory: '高血压、轻度白内障'
+            });
+
+            // 表单数据绑定：免打扰设置
+            const dndSettings = ref({
+                enabled: true,
+                startTime: '22:00',
+                endTime: '07:00'
+            });
+
+            // 子页面操作方法
+            const openSubPage = (pageName) => {
+                currentSubPage.value = pageName;
+            };
+            
+            const closeSubPage = () => {
+                currentSubPage.value = null;
+            };
+
+            return {
+                activeTab,
+                pageTitle,
+                fenceTab,
+                currentAlarm,
+                openAlarmDetail,
+                trackDate,
+                isPlaying,
+                playbackProgress,
+                playbackSpeed,
+                trackPosition,
+                formatTime,
+                togglePlay,
+                resetPlayback,
+                toggleSpeed,
+                alarms,
+                currentSubPage,
+                elderInfo,
+                dndSettings,
+                openSubPage,
+                closeSubPage
+            }
+        }
+    };
+
+    createApp(App).mount('#app');
+</script>
+
+</body>
+</html>

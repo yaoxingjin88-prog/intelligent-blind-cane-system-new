@@ -1,0 +1,82 @@
+# 编译输出
+target/
+dist/
+build/
+out/
+*.class
+*.jar
+*.war
+*.ear
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+
+# 依赖
+node_modules/
+.pnp/
+.pnp.js
+
+# 日志
+*.log
+logs/
+*.log.*
+
+# 临时文件
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# 环境配置
+.env
+.env.local
+.env.*.local
+
+# 数据库
+*.sql.backup
+*.db
+*.sqlite
+
+# Docker
+docker-compose.override.yml
+
+# 测试覆盖率
+coverage/
+.nyc_output/
+
+# 缓存
+.cache/
+.parcel-cache/
+.vite/
+.eslintcache
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# 操作系统
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 项目特定
+startup-error.log
+temp_settings.xml
+LocationSimulator.class
