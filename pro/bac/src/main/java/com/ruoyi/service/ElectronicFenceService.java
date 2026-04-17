@@ -7,12 +7,22 @@ import com.ruoyi.mapper.ElectronicFenceMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+ import java.util.List;
+ import java.util.stream.Collectors;
+
 @Service
 public class ElectronicFenceService {
     private static final double DEFAULT_RADIUS_METERS = 300.0;
 
     @Autowired
     private ElectronicFenceMapper electronicFenceMapper;
+
+    public List<ElectronicFence> getAll() {
+        return electronicFenceMapper.getAll()
+                .stream()
+                .map(this::normalizeAndPersistIfNeeded)
+                .collect(Collectors.toList());
+    }
 
     public ElectronicFence getByDeviceId(String deviceId) {
         ElectronicFence fence = electronicFenceMapper.getByDeviceId(deviceId);

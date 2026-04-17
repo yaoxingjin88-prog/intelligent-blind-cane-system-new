@@ -7,8 +7,13 @@ import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+ import java.util.List;
+
 @Mapper
 public interface ElectronicFenceMapper {
+    @Select("SELECT id, device_id as deviceId, fence_name as fenceName, center_latitude as centerLatitude, center_longitude as centerLongitude, radius_meters as radiusMeters, enabled, last_status as lastStatus, created_at as createdAt, updated_at as updatedAt FROM electronic_fence ORDER BY updated_at DESC, id DESC")
+    List<ElectronicFence> getAll();
+
     @Select("SELECT id, device_id as deviceId, fence_name as fenceName, center_latitude as centerLatitude, center_longitude as centerLongitude, radius_meters as radiusMeters, enabled, last_status as lastStatus, created_at as createdAt, updated_at as updatedAt FROM electronic_fence WHERE device_id = #{deviceId} LIMIT 1")
     ElectronicFence getByDeviceId(String deviceId);
 

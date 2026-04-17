@@ -20,20 +20,41 @@
       <el-card class="panel panel--map">
         <template #header>
           <div class="panel-header">
-            <span>风险区域热力图</span>
+            <div>
+              <span>风险区域热力图</span>
+              <p class="panel-desc">颜色越偏红，表示该区域风险事件越集中；热点数表示本次统计纳入分析的位置点数量。</p>
+            </div>
             <el-tag type="danger">{{ heatmapPoints.length }} 个热点</el-tag>
           </div>
         </template>
-        <div ref="mapContainer" class="heatmap"></div>
+        <div class="heatmap-legend">
+          <div class="legend-scale">
+            <span class="legend-label">风险强度</span>
+            <div class="legend-bar"></div>
+            <div class="legend-ticks">
+              <span>低</span>
+              <span>中</span>
+              <span>高</span>
+            </div>
+          </div>
+          <div class="legend-note">
+            <span>下方列表说明：</span>
+            <span>地图中已重点标注 Top 5 热点；`风险次数` 表示该区域累计触发次数，`最小障碍距离` 表示该热点附近记录到的最近障碍物距离。</span>
+          </div>
+        </div>
+        <div class="heatmap-wrapper">
+          <div ref="mapContainer" class="heatmap"></div>
+          <div class="map-highlight-tip">地图内已重点标注 Top 5 热点</div>
+        </div>
         <div class="hotspot-list">
-          <div v-for="point in topHotspots" :key="`${point.lng}-${point.lat}`" class="hotspot-item">
+          <div v-for="(point, index) in topHotspots" :key="`${point.lng}-${point.lat}`" class="hotspot-item">
             <div>
-              <strong>{{ point.deviceName || point.deviceId }}</strong>
+              <strong>TOP {{ index + 1 }} · {{ point.deviceName || point.deviceId }}</strong>
               <p>{{ point.lng }}, {{ point.lat }}</p>
             </div>
             <div class="hotspot-meta">
-              <span>{{ point.count }} 次</span>
-              <span>{{ point.minObstacleDistance }} cm</span>
+              <span>风险次数：{{ point.count ?? point.value ?? 0 }} 次</span>
+              <span>最小障碍距离：{{ point.minObstacleDistance ?? '-' }} cm</span>
             </div>
           </div>
         </div>
@@ -131,6 +152,7 @@ let heatmap: any = null
 let activityChart: any = null
 let batteryChart: any = null
 let alarmChart: any = null
+let hotspotMarkers: any[] = []
 
 const statCards = computed(() => [
   { label: '设备总数', value: overview.value.deviceCount ?? 0, sub: `在线 ${overview.value.onlineDevices ?? 0} 台` },
@@ -141,7 +163,9 @@ const statCards = computed(() => [
   { label: '传感器样本', value: overview.value.sensorCount ?? 0, sub: '当前保留数据总量' }
 ])
 
-const topHotspots = computed(() => heatmapPoints.value.slice(0, 5))
+const topHotspots = computed(() => [...heatmapPoints.value]
+  .sort((a, b) => (b.count ?? b.value ?? 0) - (a.count ?? a.value ?? 0))
+  .slice(0, 5))
 
 const getHealthTagType = (score: number) => {
   if (score >= 85) return 'success'
@@ -179,11 +203,25 @@ const initCharts = () => {
 
 const updateCharts = () => {
   activityChart?.setOption({
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['活跃时长', '活跃设备'] },
-    grid: { left: 40, right: 20, top: 40, bottom: 30 },
-    xAxis: { type: 'category', data: activityTrend.value.map(item => item.date?.slice(5) || '-') },
-    yAxis: [{ type: 'value', name: '分钟' }, { type: 'value', name: '设备数' }],
+    tooltip: { trigger: 'axis', confine: true },
+    legend: {
+      data: ['活跃时长', '活跃设备'],
+      top: 0,
+      right: 0,
+      itemWidth: 14,
+      itemHeight: 10,
+      textStyle: { fontSize: 12 }
+    },
+    grid: { left: 44, right: 28, top: 56, bottom: 42 },
+    xAxis: {
+      type: 'category',
+      data: activityTrend.value.map(item => item.date?.slice(5) || '-'),
+      axisLabel: { margin: 12 }
+    },
+    yAxis: [
+      { type: 'value', name: '分钟', nameGap: 16 },
+      { type: 'value', name: '设备数', nameGap: 16 }
+    ],
     series: [
       { name: '活跃时长', type: 'bar', data: activityTrend.value.map(item => item.activeMinutes || 0), itemStyle: { color: '#3b82f6' } },
       { name: '活跃设备', type: 'line', yAxisIndex: 1, smooth: true, data: activityTrend.value.map(item => item.activeDevices || 0), itemStyle: { color: '#22c55e' } }
@@ -234,13 +272,71 @@ const initMap = () => {
   })
 }
 
+const clearHotspotMarkers = () => {
+  if (!map || !hotspotMarkers.length) return
+  map.remove(hotspotMarkers)
+  hotspotMarkers = []
+}
+
+const createHotspotMarkerContent = (point: any, index: number) => {
+  const wrapper = document.createElement('div')
+  wrapper.style.display = 'flex'
+  wrapper.style.alignItems = 'center'
+  wrapper.style.gap = '8px'
+  wrapper.style.transform = 'translate(-10px, -44px)'
+
+  const badge = document.createElement('div')
+  badge.textContent = `TOP ${index + 1}`
+  badge.style.background = '#ef4444'
+  badge.style.color = '#ffffff'
+  badge.style.fontSize = '10px'
+  badge.style.fontWeight = '700'
+  badge.style.padding = '4px 6px'
+  badge.style.borderRadius = '999px'
+  badge.style.boxShadow = '0 6px 16px rgba(239, 68, 68, 0.28)'
+
+  const label = document.createElement('div')
+  label.textContent = `${point.deviceName || point.deviceId} · ${point.count ?? point.value ?? 0}次`
+  label.style.background = 'rgba(255, 255, 255, 0.96)'
+  label.style.color = '#1e293b'
+  label.style.fontSize = '12px'
+  label.style.fontWeight = '600'
+  label.style.padding = '6px 10px'
+  label.style.borderRadius = '999px'
+  label.style.border = '1px solid rgba(239, 68, 68, 0.2)'
+  label.style.boxShadow = '0 8px 20px rgba(15, 23, 42, 0.12)'
+  label.style.whiteSpace = 'nowrap'
+
+  wrapper.appendChild(badge)
+  wrapper.appendChild(label)
+  return wrapper
+}
+
+const renderHotspotMarkers = () => {
+  if (!map || !window.AMap) return
+  clearHotspotMarkers()
+  hotspotMarkers = topHotspots.value
+    .filter(point => point.lng != null && point.lat != null)
+    .map((point, index) => new window.AMap.Marker({
+      position: [point.lng, point.lat],
+      anchor: 'bottom-center',
+      offset: new window.AMap.Pixel(0, 0),
+      content: createHotspotMarkerContent(point, index),
+      zIndex: 120 + index
+    }))
+  if (hotspotMarkers.length) {
+    map.add(hotspotMarkers)
+  }
+}
+
 const updateHeatmap = () => {
-  if (!heatmap) return
+  if (!heatmap || !map) return
   const data = heatmapPoints.value.map(item => ({ lng: item.lng, lat: item.lat, count: item.value || item.count || 1 }))
   const max = data.length ? Math.max(...data.map(item => item.count || 1)) : 1
   heatmap.setDataSet({ data, max })
+  renderHotspotMarkers()
   if (data.length && map) {
-    map.setCenter([data[0].lng, data[0].lat])
+    map.setCenter([topHotspots.value[0]?.lng || data[0].lng, topHotspots.value[0]?.lat || data[0].lat])
   }
 }
 
@@ -261,12 +357,14 @@ onUnmounted(() => {
   activityChart?.dispose()
   batteryChart?.dispose()
   alarmChart?.dispose()
+  clearHotspotMarkers()
   map?.destroy()
   activityChart = null
   batteryChart = null
   alarmChart = null
   map = null
   heatmap = null
+  hotspotMarkers = []
 })
 </script>
 
@@ -276,8 +374,11 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  height: 100%;
-  overflow-y: auto;
+  min-height: 100%;
+  height: auto;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: visible;
   background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
 }
 .hero {
@@ -323,21 +424,87 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1.45fr 1fr;
   gap: 20px;
-  min-height: 680px;
+  align-items: start;
 }
 .chart-stack, .bottom-grid {
   display: grid;
   gap: 20px;
 }
+.chart-stack {
+  align-content: start;
+}
 .bottom-grid {
   grid-template-columns: 1fr 1.2fr;
+  align-items: start;
 }
 .panel-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 16px;
   font-weight: 600;
   color: #1e293b;
+}
+.panel-desc {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: #64748b;
+  line-height: 1.6;
+}
+.heatmap-legend {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+}
+.legend-scale {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+}
+.legend-label {
+  font-weight: 600;
+  color: #334155;
+}
+.legend-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #3b82f6 0%, #22c55e 40%, #f59e0b 72%, #ef4444 100%);
+}
+.legend-ticks {
+  display: flex;
+  justify-content: space-between;
+  color: #64748b;
+}
+.legend-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  line-height: 1.6;
+}
+.heatmap-wrapper {
+  position: relative;
+}
+.map-highlight-tip {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 10;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
 }
 .heatmap {
   height: 460px;
@@ -345,7 +512,7 @@ onUnmounted(() => {
   overflow: hidden;
 }
 .chart {
-  height: 220px;
+  height: 240px;
 }
 .hotspot-list {
   margin-top: 16px;
@@ -372,6 +539,7 @@ onUnmounted(() => {
   gap: 4px;
   color: #ef4444;
   font-size: 12px;
+  text-align: right;
 }
 @media (max-width: 1400px) {
   .stats-grid {
@@ -379,6 +547,46 @@ onUnmounted(() => {
   }
   .content-grid, .bottom-grid {
     grid-template-columns: 1fr;
+  }
+  .heatmap-legend {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-page {
+    padding: 16px;
+  }
+
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-header {
+    flex-direction: column;
+  }
+
+  .hotspot-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .hotspot-meta {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .map-highlight-tip {
+    left: 14px;
+    right: auto;
   }
 }
 </style>

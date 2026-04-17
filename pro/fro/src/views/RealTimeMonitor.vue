@@ -21,140 +21,173 @@
       
       <!-- 右侧：设备信息面板 -->
       <div class="info-panel">
-        <el-card class="info-card">
-          <template #header>
-            <div class="card-header">
-              <span>设备信息</span>
-              <el-tag :type="deviceStatus === '在线' ? 'success' : 'danger'">
-                {{ deviceStatus }}
-              </el-tag>
-            </div>
-          </template>
-          
-          <div class="info-item">
-            <label>设备编号：</label>
-            <span>{{ deviceInfo.deviceId }}</span>
-          </div>
-          <div class="info-item">
-            <label>设备名称：</label>
-            <span>{{ deviceInfo.deviceName }}</span>
-          </div>
-          <div class="info-item">
-            <label>所属用户：</label>
-            <span>{{ deviceInfo.userName }}</span>
-          </div>
-          <div class="info-item">
-            <label>当前电量：</label>
-            <span :class="getBatteryClass(deviceInfo.batteryLevel)">
-              {{ deviceInfo.batteryLevel }}%
-            </span>
-          </div>
-          <div class="info-item">
-            <label>更新时间：</label>
-            <span>{{ latestData?.createTime || '-' }}</span>
-          </div>
-        </el-card>
-        
-        <el-card class="location-card">
-          <template #header>
-            <div class="card-header">
-              <span>最新位置</span>
-            </div>
-          </template>
-          
-          <div class="info-item">
-            <label>经度：</label>
-            <span>{{ latestData?.longitude || '-' }}</span>
-          </div>
-          <div class="info-item">
-            <label>纬度：</label>
-            <span>{{ latestData?.latitude || '-' }}</span>
-          </div>
-          <div class="info-item">
-            <label>地址：</label>
-            <span>{{ address || '-' }}</span>
-          </div>
-          <div class="info-item">
-            <label>超声波距离：</label>
-            <span>{{ latestData?.obstacleDistance ? latestData.obstacleDistance + ' cm' : '-' }}</span>
-          </div>
-          <div class="info-item">
-            <label>摔倒检测：</label>
-            <el-tag :type="latestData?.isFall ? 'danger' : 'success'" size="small">
-              {{ latestData?.isFall ? '⚠️ 摔倒！' : '正常' }}
+        <div class="summary-grid">
+          <div class="summary-item">
+            <span class="summary-label">设备状态</span>
+            <el-tag :type="deviceStatus === '在线' ? 'success' : 'danger'">
+              {{ deviceStatus }}
             </el-tag>
           </div>
-          <div class="info-item">
-            <label>摔倒置信度：</label>
-            <span>{{ fallConfidenceText }}</span>
+          <div class="summary-item">
+            <span class="summary-label">当前电量</span>
+            <span :class="getBatteryClass(deviceInfo.batteryLevel)" class="summary-value">
+              {{ deviceInfo.batteryLevel ?? '-' }}%
+            </span>
           </div>
-        </el-card>
+          <div class="summary-item">
+            <span class="summary-label">数据更新时间</span>
+            <span class="summary-value">{{ latestData?.createTime || '-' }}</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">最新报警</span>
+            <el-tag :type="latestAlarm && String(latestAlarm.status) === '0' ? 'danger' : 'info'">
+              {{ latestAlarm?.alarmType || '暂无报警' }}
+            </el-tag>
+          </div>
+        </div>
 
-        <el-card class="fence-card">
-          <template #header>
-            <div class="card-header">
-              <span>电子围栏</span>
-              <el-tag :type="fenceStatus.outside ? 'danger' : (fenceForm.enabled ? 'success' : 'info')" size="small">
-                {{ fenceStatus.outside ? '已越界' : (fenceForm.enabled ? '安全区内' : '未启用') }}
-              </el-tag>
-            </div>
-          </template>
+        <el-card class="panel-card">
+          <el-tabs v-model="activePanel" stretch class="monitor-tabs">
+            <el-tab-pane label="设备" name="device">
+              <div class="tab-content">
+                <div class="section-block">
+                  <div class="section-title">
+                    <span>设备信息</span>
+                    <el-tag :type="deviceStatus === '在线' ? 'success' : 'danger'">
+                      {{ deviceStatus }}
+                    </el-tag>
+                  </div>
+                  <div class="info-item">
+                    <label>设备编号：</label>
+                    <span>{{ deviceInfo.deviceId || '-' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>设备名称：</label>
+                    <span>{{ deviceInfo.deviceName || '-' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>所属用户：</label>
+                    <span>{{ deviceInfo.userName || '-' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>当前电量：</label>
+                    <span :class="getBatteryClass(deviceInfo.batteryLevel)">
+                      {{ deviceInfo.batteryLevel ?? '-' }}%
+                    </span>
+                  </div>
+                  <div class="info-item">
+                    <label>更新时间：</label>
+                    <span>{{ latestData?.createTime || '-' }}</span>
+                  </div>
+                </div>
+              </div>
+            </el-tab-pane>
 
-          <div class="info-item">
-            <label>围栏名称：</label>
-            <span>{{ fence?.fenceName || fenceForm.fenceName || '-' }}</span>
-          </div>
-          <div class="info-item">
-            <label>围栏半径：</label>
-            <span>{{ fenceForm.radiusMeters || '-' }} m</span>
-          </div>
-          <div class="info-item">
-            <label>围栏中心：</label>
-            <span>{{ fenceCenterText }}</span>
-          </div>
-          <div class="info-item">
-            <label>当前位置距中心：</label>
-            <span>{{ fenceDistanceText }}</span>
-          </div>
-          <div class="fence-form-row">
-            <el-input v-model="fenceForm.fenceName" placeholder="围栏名称" />
-          </div>
-          <div class="fence-form-row">
-            <el-input-number v-model="fenceForm.radiusMeters" :min="50" :max="5000" :step="50" />
-            <el-switch v-model="fenceForm.enabled" active-text="启用" inactive-text="停用" />
-          </div>
-          <div class="radius-presets">
-            <el-button size="small" @click="setFenceRadius(100)">100米</el-button>
-            <el-button size="small" @click="setFenceRadius(300)">300米</el-button>
-            <el-button size="small" @click="setFenceRadius(500)">500米</el-button>
-          </div>
-          <div class="fence-actions">
-            <el-button size="small" @click="useCurrentLocationAsFenceCenter">当前位置设为中心</el-button>
-            <el-button size="small" @click="focusFence">定位到围栏</el-button>
-            <el-button size="small" type="primary" @click="saveFence">保存围栏</el-button>
-          </div>
-        </el-card>
-        
-        <!-- 实时报警区域 -->
-        <el-card class="alarm-card" v-if="latestAlarm">
-          <template #header>
-            <div class="card-header alarm-header">
-              <span>⚠️ 最新报警</span>
-              <el-button @click="handleAlarm" type="primary" size="small">
-                处理报警
-              </el-button>
-            </div>
-          </template>
-          
-          <div class="alarm-content">
-            <p><strong>报警类型：</strong>{{ latestAlarm.alarmType }}</p>
-            <p><strong>报警时间：</strong>{{ latestAlarm.alarmTime }}</p>
-            <p><strong>处理状态：</strong>
-              <el-tag :type="String(latestAlarm.status) === '0' ? 'danger' : 'success'">
-                {{ String(latestAlarm.status) === '0' ? '未处理' : '已处理' }}
-              </el-tag>
-            </p>
-          </div>
+            <el-tab-pane label="位置" name="location">
+              <div class="tab-content">
+                <div class="section-block">
+                  <div class="section-title">
+                    <span>最新位置</span>
+                  </div>
+                  <div class="info-item">
+                    <label>经度：</label>
+                    <span>{{ latestData?.longitude || '-' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>纬度：</label>
+                    <span>{{ latestData?.latitude || '-' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>地址：</label>
+                    <span class="address-value">{{ address || '-' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>超声波距离：</label>
+                    <span>{{ latestData?.obstacleDistance ? latestData.obstacleDistance + ' cm' : '-' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>摔倒检测：</label>
+                    <el-tag :type="latestData?.isFall ? 'danger' : 'success'" size="small">
+                      {{ latestData?.isFall ? '⚠️ 摔倒！' : '正常' }}
+                    </el-tag>
+                  </div>
+                  <div class="info-item">
+                    <label>摔倒置信度：</label>
+                    <span>{{ fallConfidenceText }}</span>
+                  </div>
+                </div>
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane label="围栏" name="fence">
+              <div class="tab-content">
+                <div class="section-block">
+                  <div class="section-title">
+                    <span>电子围栏</span>
+                    <el-tag :type="fenceStatus.outside ? 'danger' : (fenceForm.enabled ? 'success' : 'info')" size="small">
+                      {{ fenceStatus.outside ? '已越界' : (fenceForm.enabled ? '安全区内' : '未启用') }}
+                    </el-tag>
+                  </div>
+                  <div class="info-item">
+                    <label>围栏名称：</label>
+                    <span>{{ fence?.fenceName || fenceForm.fenceName || '-' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>围栏半径：</label>
+                    <span>{{ fenceForm.radiusMeters || '-' }} m</span>
+                  </div>
+                  <div class="info-item">
+                    <label>围栏中心：</label>
+                    <span>{{ fenceCenterText }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>当前位置距中心：</label>
+                    <span>{{ fenceDistanceText }}</span>
+                  </div>
+                  <div class="fence-form-row">
+                    <el-input v-model="fenceForm.fenceName" placeholder="围栏名称" />
+                  </div>
+                  <div class="fence-form-row">
+                    <el-input-number v-model="fenceForm.radiusMeters" :min="50" :max="5000" :step="50" />
+                    <el-switch v-model="fenceForm.enabled" active-text="启用" inactive-text="停用" />
+                  </div>
+                  <div class="radius-presets">
+                    <el-button size="small" @click="setFenceRadius(100)">100米</el-button>
+                    <el-button size="small" @click="setFenceRadius(300)">300米</el-button>
+                    <el-button size="small" @click="setFenceRadius(500)">500米</el-button>
+                  </div>
+                  <div class="fence-actions">
+                    <el-button size="small" @click="useCurrentLocationAsFenceCenter">当前位置设为中心</el-button>
+                    <el-button size="small" @click="focusFence">定位到围栏</el-button>
+                    <el-button size="small" type="primary" @click="saveFence">保存围栏</el-button>
+                  </div>
+                </div>
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane label="报警" name="alarm">
+              <div class="tab-content">
+                <div class="section-block" v-if="latestAlarm">
+                  <div class="section-title alarm-header">
+                    <span>⚠️ 最新报警</span>
+                    <el-button @click="handleAlarm" type="primary" size="small">
+                      处理报警
+                    </el-button>
+                  </div>
+                  <div class="alarm-content">
+                    <p><strong>报警类型：</strong>{{ latestAlarm.alarmType }}</p>
+                    <p><strong>报警时间：</strong>{{ latestAlarm.alarmTime }}</p>
+                    <p><strong>处理状态：</strong>
+                      <el-tag :type="String(latestAlarm.status) === '0' ? 'danger' : 'success'">
+                        {{ String(latestAlarm.status) === '0' ? '未处理' : '已处理' }}
+                      </el-tag>
+                    </p>
+                  </div>
+                </div>
+                <el-empty v-else description="当前暂无报警" />
+              </div>
+            </el-tab-pane>
+          </el-tabs>
         </el-card>
       </div>
     </div>
@@ -171,6 +204,7 @@ import axios from 'axios'
 const route = useRoute()
 const router = useRouter()
 const deviceId = ref(route.params.deviceId as string)
+const activePanel = ref('device')
 
 // 地图相关
 let map: any = null
@@ -703,64 +737,146 @@ onUnmounted(() => {
 
 <style scoped>
 .monitor-container {
-  padding: 20px;
+  padding: 20px 24px;
   height: 100vh;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  background: #f5f7fb;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  gap: 16px;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 28px;
+  color: #1f2937;
 }
 
 .content {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
   flex: 1;
   gap: 20px;
   overflow: hidden;
+  min-height: 0;
 }
 
 .map-section {
-  flex: 2;
   position: relative;
+  min-width: 0;
+  background: #ffffff;
+  padding: 12px;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
 }
 
 .map-container {
   width: 100%;
   height: 100%;
-  border-radius: 8px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  min-height: 640px;
+  border-radius: 12px;
 }
 
 .map-controls {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 24px;
+  right: 24px;
   z-index: 100;
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .info-panel {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 16px;
+  min-height: 0;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summary-item {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 88px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.summary-label {
+  color: #909399;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.summary-value {
+  color: #303133;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.panel-card {
+  flex: 1;
+  min-height: 0;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.panel-card :deep(.el-card__body) {
+  height: 100%;
+  padding: 16px;
+}
+
+.monitor-tabs {
+  height: 100%;
+}
+
+.monitor-tabs :deep(.el-tabs__content) {
+  height: calc(100% - 55px);
+}
+
+.monitor-tabs :deep(.el-tab-pane) {
+  height: 100%;
+}
+
+.tab-content {
+  height: 100%;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 4px;
 }
 
-.info-card, .location-card, .fence-card, .alarm-card {
-  margin-bottom: 0;
+.section-block {
+  background: #f8fafc;
+  border: 1px solid #ebeef5;
+  border-radius: 12px;
+  padding: 16px;
 }
 
-.card-header {
+.section-title {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-weight: bold;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 12px;
 }
 
 .alarm-header {
@@ -770,6 +886,8 @@ onUnmounted(() => {
 .info-item {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
   padding: 8px 0;
   border-bottom: 1px solid #EBEEF5;
 }
@@ -781,6 +899,17 @@ onUnmounted(() => {
 .info-item label {
   color: #909399;
   font-weight: 500;
+  white-space: nowrap;
+}
+
+.info-item span {
+  flex: 1;
+  text-align: right;
+  word-break: break-all;
+}
+
+.address-value {
+  line-height: 1.6;
 }
 
 .battery-low {
@@ -810,17 +939,61 @@ onUnmounted(() => {
   display: flex;
   gap: 10px;
   margin-top: 12px;
+  flex-wrap: wrap;
 }
 
 .fence-actions {
   display: flex;
   gap: 10px;
   margin-top: 12px;
+  flex-wrap: wrap;
 }
 
 .radius-presets {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1280px) {
+  .content {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+}
+
+@media (max-width: 960px) {
+  .monitor-container {
+    height: auto;
+    min-height: 100vh;
+    padding: 16px;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .header h2 {
+    font-size: 24px;
+  }
+
+  .content {
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .map-container {
+    height: 420px;
+    min-height: 420px;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-card {
+    min-height: 540px;
+  }
 }
 </style>

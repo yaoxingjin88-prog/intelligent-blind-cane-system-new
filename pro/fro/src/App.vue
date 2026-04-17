@@ -33,6 +33,18 @@
               <el-icon><Monitor /></el-icon>
               <template #title>设备管理</template>
             </el-menu-item>
+            <el-menu-item index="/monitor-center">
+              <el-icon><Monitor /></el-icon>
+              <template #title>实时监控</template>
+            </el-menu-item>
+            <el-menu-item index="/fences">
+              <el-icon><Guide /></el-icon>
+              <template #title>电子围栏</template>
+            </el-menu-item>
+            <el-menu-item index="/trajectory-playback">
+              <el-icon><Guide /></el-icon>
+              <template #title>轨迹回放</template>
+            </el-menu-item>
             <el-menu-item index="/sensor-data">
               <el-icon><DataAnalysis /></el-icon>
               <template #title>传感器数据</template>
@@ -57,9 +69,39 @@
             <span class="page-title">{{ getMenuName() }}</span>
           </div>
           <div class="app-header__right">
-            <el-badge :value="3" class="header-badge">
-              <el-icon :size="18" class="header-icon"><BellFilled /></el-icon>
-            </el-badge>
+            <el-popover placement="bottom-end" :width="360" trigger="click" popper-class="notification-popper">
+              <template #reference>
+                <div class="notification-trigger" @click="fetchHeaderNotifications">
+                  <el-badge :value="unreadAlarmCount" :hidden="!unreadAlarmCount" class="header-badge">
+                    <el-icon :size="18" class="header-icon"><BellFilled /></el-icon>
+                  </el-badge>
+                </div>
+              </template>
+              <div class="notification-panel">
+                <div class="notification-panel__header">
+                  <div>
+                    <strong>报警消息</strong>
+                    <p>未处理告警会在这里集中提醒</p>
+                  </div>
+                  <el-tag type="danger" effect="light">{{ unreadAlarmCount }} 条未处理</el-tag>
+                </div>
+                <div v-if="latestUnhandledAlarms.length" class="notification-list">
+                  <div v-for="alarm in latestUnhandledAlarms" :key="alarm.id" class="notification-item" @click="goToAlarmRecords()">
+                    <div class="notification-item__main">
+                      <span class="notification-device">{{ alarm.deviceId || '未知设备' }}</span>
+                      <el-tag :type="getAlarmTagType(alarm.alarmType)" effect="light" size="small">
+                        {{ alarm.alarmType || '未知告警' }}
+                      </el-tag>
+                    </div>
+                    <span class="notification-time">{{ alarm.alarmTime || '-' }}</span>
+                  </div>
+                </div>
+                <el-empty v-else description="暂无未处理告警" :image-size="72" />
+                <div class="notification-panel__footer">
+                  <el-button type="primary" text @click="goToAlarmRecords">查看全部告警</el-button>
+                </div>
+              </div>
+            </el-popover>
             <el-dropdown trigger="click">
               <div class="user-avatar-wrapper">
                 <el-avatar :size="32" src="https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png" />
@@ -113,23 +155,67 @@ export default {
     const isLoggedIn = ref(localStorage.getItem('token') !== null)
     const isCollapse = ref(false)
     const currentUser = ref(JSON.parse(localStorage.getItem('user') || '{}'))
+    const headerAlarmRecords = ref([])
+    let alarmPollTimer = null
 
     const menuNameMap = {
       '/': '首页',
       '/users': '用户管理',
       '/devices': '设备管理',
+      '/monitor-center': '实时监控',
+      '/fences': '电子围栏',
+      '/trajectory-playback': '轨迹回放',
       '/sensor-data': '传感器数据',
       '/alarm-records': '告警记录'
     }
 
+    const latestUnhandledAlarms = computed(() => headerAlarmRecords.value.slice(0, 5))
+    const unreadAlarmCount = computed(() => headerAlarmRecords.value.length)
+
     const getMenuName = () => {
       return menuNameMap[activeMenu.value] || '概览'
+    }
+
+    const isUnhandledAlarm = (status) => String(status) === '0' || status === '未处理'
+
+    const getAlarmTagType = (alarmType) => {
+      if (!alarmType) return 'info'
+      if (String(alarmType).includes('跌倒')) return 'danger'
+      if (String(alarmType).includes('低电')) return 'warning'
+      if (String(alarmType).includes('围栏')) return 'warning'
+      return 'info'
+    }
+
+    const fetchHeaderNotifications = async () => {
+      if (!isLoggedIn.value) {
+        headerAlarmRecords.value = []
+        return
+      }
+      try {
+        const response = await fetch('/api/alarm-records', {
+          cache: 'no-cache'
+        })
+        const data = await response.json()
+        headerAlarmRecords.value = (data.data || [])
+          .filter(record => isUnhandledAlarm(record.status))
+          .sort((a, b) => String(b.alarmTime || '').localeCompare(String(a.alarmTime || '')))
+      } catch (error) {
+        console.error('获取顶部告警通知失败:', error)
+        headerAlarmRecords.value = []
+      }
+    }
+
+    const goToAlarmRecords = () => {
+      router.push('/alarm-records')
     }
 
     // 监听登录状态变化
     const checkLoginStatus = () => {
       isLoggedIn.value = localStorage.getItem('token') !== null
       currentUser.value = JSON.parse(localStorage.getItem('user') || '{}')
+      if (!isLoggedIn.value) {
+        headerAlarmRecords.value = []
+      }
     }
 
     const handleMenuSelect = (key) => {
@@ -145,6 +231,7 @@ export default {
 
     onMounted(() => {
       activeMenu.value = router.currentRoute.value.path
+      fetchHeaderNotifications()
       
       // 监听路由变化，检查登录状态
       router.beforeEach((to, from, next) => {
@@ -167,6 +254,10 @@ export default {
         activeMenu.value = to.path
         next()
       })
+
+      alarmPollTimer = window.setInterval(() => {
+        fetchHeaderNotifications()
+      }, 15000)
       
       // 监听localStorage变化
       window.addEventListener('storage', checkLoginStatus)
@@ -174,6 +265,10 @@ export default {
 
     onUnmounted(() => {
       window.removeEventListener('storage', checkLoginStatus)
+      if (alarmPollTimer) {
+        window.clearInterval(alarmPollTimer)
+        alarmPollTimer = null
+      }
     })
 
     return {
@@ -183,6 +278,11 @@ export default {
       isCollapse,
       currentUser,
       getMenuName,
+      latestUnhandledAlarms,
+      unreadAlarmCount,
+      getAlarmTagType,
+      fetchHeaderNotifications,
+      goToAlarmRecords,
       logout
     }
   }
@@ -361,6 +461,21 @@ html, body, #app {
   gap: 20px;
 }
 
+.notification-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.notification-trigger:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
 .header-icon {
   color: #64748b;
   cursor: pointer;
@@ -369,6 +484,80 @@ html, body, #app {
 
 .header-icon:hover {
   color: #3b82f6;
+}
+
+.header-badge .el-badge__content {
+  box-shadow: 0 4px 10px rgba(239, 68, 68, 0.25);
+}
+
+.notification-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notification-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.notification-panel__header strong {
+  color: #0f172a;
+}
+
+.notification-panel__header p {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.notification-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.notification-item {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.notification-item:hover {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.notification-item__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notification-device {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.notification-time {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.notification-panel__footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .user-avatar-wrapper {

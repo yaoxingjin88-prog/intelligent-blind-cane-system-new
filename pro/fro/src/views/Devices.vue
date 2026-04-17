@@ -1,23 +1,81 @@
 <template>
   <div class="devices-container">
+    <div class="page-hero">
+      <div>
+        <h2>设备管理</h2>
+        <p>集中查看设备状态、绑定用户、电量健康与测试模拟情况</p>
+      </div>
+      <el-button type="primary" @click="openAddDeviceDialog">
+        <el-icon><Plus /></el-icon>
+        添加设备
+      </el-button>
+    </div>
+
+    <div class="stats-grid">
+      <div v-for="card in statCards" :key="card.label" class="stat-card">
+        <span class="stat-label">{{ card.label }}</span>
+        <strong class="stat-value">{{ card.value }}</strong>
+        <span class="stat-sub">{{ card.sub }}</span>
+      </div>
+    </div>
+
     <el-card class="devices-card">
       <template #header>
         <div class="card-header">
-          <span>设备管理</span>
-          <el-button type="primary" @click="openAddDeviceDialog">
-            <el-icon><Plus /></el-icon>
-            添加设备
-          </el-button>
+          <div>
+            <span>设备列表</span>
+            <p class="header-subtitle">支持快速进入实时监控、切换测试状态，并查看设备所属用户与电量概况</p>
+          </div>
+          <el-tag type="primary" effect="plain">共 {{ total }} 台设备</el-tag>
         </div>
       </template>
       
-      <el-table :data="devices" style="width: 100%">
+      <el-table :data="paginatedDevices" class="devices-table" style="width: 100%" stripe>
         <el-table-column prop="id" label="ID" width="80" align="center" />
-        <el-table-column prop="deviceId" label="设备ID" />
-        <el-table-column prop="userId" label="用户ID" />
-        <el-table-column prop="batteryLevel" label="电池电量" />
-        <el-table-column prop="status" label="状态" />
-        <el-table-column label="操作" width="300" align="center">
+        <el-table-column label="设备信息" min-width="220">
+          <template #default="{ row }">
+            <div class="device-main">
+              <strong>{{ row.deviceName || row.deviceId }}</strong>
+              <span>{{ row.deviceId }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="所属用户" min-width="180">
+          <template #default="{ row }">
+            <div class="user-main">
+              <strong>{{ row.userName || '未关联用户' }}</strong>
+              <span>用户ID：{{ row.userId || '-' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="电池电量" min-width="180">
+          <template #default="{ row }">
+            <div class="battery-cell">
+              <span class="battery-text">{{ Number(row.batteryLevel) || 0 }}%</span>
+              <el-progress
+                :percentage="Number(row.batteryLevel) || 0"
+                :status="getBatteryStatus(row.batteryLevel)"
+                :stroke-width="8"
+                :show-text="false"
+              />
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="设备状态" width="120" align="center">
+          <template #default="{ row }">
+            <el-tag :type="getStatusTagType(row.status)" effect="light">
+              {{ row.status || '未知' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="测试状态" width="120" align="center">
+          <template #default="{ row }">
+            <el-tag :type="isTesting(row.deviceId) ? 'warning' : 'info'" effect="light">
+              {{ isTesting(row.deviceId) ? '测试中' : '未启动' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="320" align="center">
           <template #default="{ row }">
             <el-button type="success" link size="small" @click="goToMonitor(row)">
               <el-icon><View /></el-icon>实时监控
@@ -61,7 +119,14 @@
           <el-input v-model="addDeviceForm.deviceId" placeholder="请输入设备ID" />
         </el-form-item>
         <el-form-item label="用户ID" prop="userId">
-          <el-input v-model="addDeviceForm.userId" placeholder="请输入用户ID" />
+          <el-select v-model="addDeviceForm.userId" placeholder="请选择绑定用户" clearable style="width: 100%">
+            <el-option
+              v-for="user in usersOptions"
+              :key="user.id"
+              :label="`${user.name}（${user.username}）`"
+              :value="user.id"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="电池电量" prop="batteryLevel">
           <el-input v-model="addDeviceForm.batteryLevel" placeholder="请输入电池电量" type="number" />
@@ -88,7 +153,14 @@
           <el-input v-model="editDeviceForm.deviceId" placeholder="请输入设备ID" />
         </el-form-item>
         <el-form-item label="用户ID" prop="userId">
-          <el-input v-model="editDeviceForm.userId" placeholder="请输入用户ID" />
+          <el-select v-model="editDeviceForm.userId" placeholder="请选择绑定用户" clearable style="width: 100%">
+            <el-option
+              v-for="user in usersOptions"
+              :key="user.id"
+              :label="`${user.name}（${user.username}）`"
+              :value="user.id"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="电池电量" prop="batteryLevel">
           <el-input v-model="editDeviceForm.batteryLevel" placeholder="请输入电池电量" type="number" />
@@ -111,7 +183,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus, Edit, Delete, View } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
@@ -128,6 +200,7 @@ export default {
     const route = useRoute()
     const router = useRouter()
     const devices = ref([])
+    const usersOptions = ref([])
     const total = ref(0)
     const currentPage = ref(1)
     const pageSize = ref(10)
@@ -153,20 +226,69 @@ export default {
     
     const addDeviceRules = ref({
       deviceId: [{ required: true, message: '请输入设备ID', trigger: 'blur' }],
-      userId: [{ required: true, message: '请输入用户ID', trigger: 'blur' }],
       batteryLevel: [{ required: true, message: '请输入电池电量', trigger: 'blur' }],
       status: [{ required: true, message: '请选择状态', trigger: 'blur' }]
     })
     
     const editDeviceRules = ref({
       deviceId: [{ required: true, message: '请输入设备ID', trigger: 'blur' }],
-      userId: [{ required: true, message: '请输入用户ID', trigger: 'blur' }],
       batteryLevel: [{ required: true, message: '请输入电池电量', trigger: 'blur' }],
       status: [{ required: true, message: '请选择状态', trigger: 'blur' }]
     })
     
     const addDeviceFormRef = ref(null)
     const editDeviceFormRef = ref(null)
+
+    const paginatedDevices = computed(() => {
+      const start = (currentPage.value - 1) * pageSize.value
+      const end = start + pageSize.value
+      return devices.value.slice(start, end)
+    })
+
+    const statCards = computed(() => {
+      const onlineCount = devices.value.filter(device => device.status === '在线').length
+      const testingCount = devices.value.filter(device => isTesting(device.deviceId)).length
+      const lowBatteryCount = devices.value.filter(device => Number(device.batteryLevel) <= 20).length
+      const boundUserCount = devices.value.filter(device => device.userId).length
+      return [
+        { label: '设备总数', value: total.value, sub: '当前已录入系统的设备数量' },
+        { label: '在线设备', value: onlineCount, sub: `离线 ${total.value - onlineCount} 台` },
+        { label: '测试中设备', value: testingCount, sub: '正在进行模拟上报的设备' },
+        { label: '低电量设备', value: lowBatteryCount, sub: `已关联用户 ${boundUserCount} 台` }
+      ]
+    })
+
+    const getStatusTagType = (status) => {
+      if (status === '在线') return 'success'
+      if (status === '离线') return 'info'
+      return 'warning'
+    }
+
+    const getBatteryStatus = (batteryLevel) => {
+      const value = Number(batteryLevel) || 0
+      if (value <= 20) return 'exception'
+      if (value <= 50) return 'warning'
+      return 'success'
+    }
+
+    const normalizeUserId = (userId) => {
+      if (userId === '' || userId == null) return null
+      const value = Number(userId)
+      return Number.isNaN(value) ? null : value
+    }
+
+    const fetchUsersOptions = async () => {
+      try {
+        const response = await fetch('/api/users', {
+          cache: 'no-cache'
+        })
+        const data = await response.json()
+        usersOptions.value = data.data || []
+      } catch (error) {
+        console.error('获取用户选项失败:', error)
+        usersOptions.value = []
+      }
+    }
     
     const fetchDevices = async () => {
       try {
@@ -177,6 +299,10 @@ export default {
         const data = await response.json()
         devices.value = data.data || []
         total.value = devices.value.length
+        const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
+        if (currentPage.value > maxPage) {
+          currentPage.value = maxPage
+        }
         await fetchTestingDeviceIds()
       } catch (error) {
         console.error('获取设备列表失败:', error)
@@ -211,7 +337,10 @@ export default {
     }
     
     const openEditDeviceDialog = (row) => {
-      editDeviceForm.value = { ...row }
+      editDeviceForm.value = {
+        ...row,
+        userId: row.userId ?? null
+      }
       editDialogVisible.value = true
     }
     
@@ -224,7 +353,7 @@ export default {
             const deviceData = {
               ...addDeviceForm.value,
               deviceId: addDeviceForm.value.deviceId.toString(),
-              userId: parseInt(addDeviceForm.value.userId),
+              userId: normalizeUserId(addDeviceForm.value.userId),
               batteryLevel: parseInt(addDeviceForm.value.batteryLevel)
             }
             // 调用后端API添加设备
@@ -260,7 +389,7 @@ export default {
             const deviceData = {
               ...editDeviceForm.value,
               deviceId: editDeviceForm.value.deviceId.toString(),
-              userId: parseInt(editDeviceForm.value.userId),
+              userId: normalizeUserId(editDeviceForm.value.userId),
               batteryLevel: parseInt(editDeviceForm.value.batteryLevel),
               id: parseInt(editDeviceForm.value.id)
             }
@@ -341,15 +470,15 @@ export default {
     
     const handleSizeChange = (size) => {
       pageSize.value = size
-      fetchDevices()
+      currentPage.value = 1
     }
     
     const handleCurrentChange = (current) => {
       currentPage.value = current
-      fetchDevices()
     }
     
     onMounted(() => {
+      fetchUsersOptions()
       fetchDevices()
       
       // 检查URL参数，如果有action=add则打开添加设备对话框
@@ -362,9 +491,12 @@ export default {
     
     return {
       devices,
+      usersOptions,
       total,
       currentPage,
       pageSize,
+      paginatedDevices,
+      statCards,
       addDialogVisible,
       editDialogVisible,
       addDeviceForm,
@@ -380,6 +512,8 @@ export default {
       deleteDevice,
       toggleDeviceTest,
       isTesting,
+      getStatusTagType,
+      getBatteryStatus,
       handleSizeChange,
       handleCurrentChange,
       goToMonitor
@@ -392,22 +526,79 @@ export default {
 .devices-container {
   width: 100%;
   padding: 24px;
+  min-height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
+}
+
+.page-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.page-hero h2 {
+  margin: 0 0 6px;
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.page-hero p {
+  margin: 0;
+  color: #64748b;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.stat-label {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.stat-value {
+  font-size: 28px;
+  color: #0f172a;
+}
+
+.stat-sub {
+  font-size: 12px;
+  color: #94a3b8;
 }
 
 .devices-card {
-  border-radius: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  margin-bottom: 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
   overflow: hidden;
-  background-color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.96);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 18px 22px;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 22px 16px;
   border-bottom: 1px solid #f1f5f9;
 }
 
@@ -417,11 +608,74 @@ export default {
   color: #1e293b;
 }
 
+.header-subtitle {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.devices-table :deep(.el-table__header th) {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+}
+
+.devices-table :deep(.el-table__row td) {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.device-main,
+.user-main,
+.battery-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.device-main strong,
+.user-main strong {
+  color: #0f172a;
+}
+
+.device-main span,
+.user-main span,
+.battery-text {
+  font-size: 12px;
+  color: #64748b;
+}
+
 .pagination {
   margin-top: 0;
   display: flex;
   justify-content: flex-end;
   padding: 16px 22px;
   border-top: 1px solid #f1f5f9;
+}
+
+@media (max-width: 1200px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .devices-container {
+    padding: 16px;
+  }
+
+  .page-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .card-header {
+    flex-direction: column;
+  }
 }
 </style>

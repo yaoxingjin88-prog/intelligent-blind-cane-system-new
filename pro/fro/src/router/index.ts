@@ -32,6 +32,21 @@ const routes = [
     component: () => import('../views/AlarmRecords.vue')
   },
   {
+    path: '/monitor-center',
+    name: 'MonitoringCenter',
+    component: () => import('../views/MonitoringCenter.vue')
+  },
+  {
+    path: '/fences',
+    name: 'Fences',
+    component: () => import('../views/Fences.vue')
+  },
+  {
+    path: '/trajectory-playback',
+    name: 'TrajectoryPlayback',
+    component: () => import('../views/TrajectoryPlayback.vue')
+  },
+  {
     path: '/monitor/:deviceId',
     name: 'RealTimeMonitor',
     component: () => import('../views/RealTimeMonitor.vue'),
