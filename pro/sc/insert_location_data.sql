@@ -1,0 +1,18 @@
+-- 插入测试位置数据，模拟设备移动轨迹
+-- 北京天安门附近，向东南方向移动
+
+INSERT INTO sensor_data (device_id, obstacle_distance, is_fall, latitude, longitude, temperature, humidity, data_time, created_at) VALUES
+('DEVICE001', 120.5, 0, 39.9042, 116.4074, 25.5, 60, NOW(), NOW()),
+('DEVICE001', 110.0, 0, 39.9038, 116.4080, 25.6, 58, DATE_SUB(NOW(), INTERVAL 1 MINUTE), DATE_SUB(NOW(), INTERVAL 1 MINUTE)),
+('DEVICE001', 95.5, 0, 39.9035, 116.4085, 25.8, 55, DATE_SUB(NOW(), INTERVAL 2 MINUTE), DATE_SUB(NOW(), INTERVAL 2 MINUTE)),
+('DEVICE001', 80.0, 0, 39.9030, 116.4090, 26.0, 52, DATE_SUB(NOW(), INTERVAL 3 MINUTE), DATE_SUB(NOW(), INTERVAL 3 MINUTE)),
+('DEVICE001', 65.5, 0, 39.9025, 116.4095, 26.2, 50, DATE_SUB(NOW(), INTERVAL 4 MINUTE), DATE_SUB(NOW(), INTERVAL 4 MINUTE)),
+('DEVICE001', 50.0, 0, 39.9020, 116.4100, 26.5, 48, DATE_SUB(NOW(), INTERVAL 5 MINUTE), DATE_SUB(NOW(), INTERVAL 5 MINUTE)),
+('DEVICE001', 45.0, 1, 39.9015, 116.4105, 26.8, 45, DATE_SUB(NOW(), INTERVAL 6 MINUTE), DATE_SUB(NOW(), INTERVAL 6 MINUTE));
+
+-- 查看插入的数据
+SELECT device_id, latitude, longitude, data_time 
+FROM sensor_data 
+WHERE device_id = 'DEVICE001' 
+ORDER BY data_time DESC 
+LIMIT 10;
