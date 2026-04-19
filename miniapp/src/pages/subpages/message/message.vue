@@ -51,12 +51,14 @@ const alarmTypeMap = {
 
 // 获取消息图标
 const getMessageIcon = (type) => {
-  return alarmTypeMap[type]?.icon || '📢'
+  const info = alarmTypeMap[type]
+  return info ? info.icon : '📢'
 }
 
 // 获取消息标题
 const getMessageTitle = (type) => {
-  return alarmTypeMap[type]?.title || type || '系统消息'
+  const info = alarmTypeMap[type]
+  return info ? info.title : (type || '系统消息')
 }
 
 // 加载报警列表作为消息

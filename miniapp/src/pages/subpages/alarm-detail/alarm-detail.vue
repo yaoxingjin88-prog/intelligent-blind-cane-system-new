@@ -19,11 +19,11 @@
       <view class="card-header">
         <view class="header-left">
           <view class="icon-circle" :class="alarmLevel">
-            <text class="icon-text">{{ getAlarmIcon(alarmData?.alarmType) }}</text>
+            <text class="icon-text">{{ getAlarmIcon(alarmData ? alarmData.alarmType : '') }}</text>
           </view>
           <view class="title-section">
-            <text class="alarm-title">{{ getAlarmTitle(alarmData?.alarmType) }}</text>
-            <text class="alarm-time">🕐 {{ formatTime(alarmData?.alarmTime) }}</text>
+            <text class="alarm-title">{{ getAlarmTitle(alarmData ? alarmData.alarmType : '') }}</text>
+            <text class="alarm-time">🕐 {{ formatTime(alarmData ? alarmData.alarmTime : '') }}</text>
           </view>
         </view>
         <view class="status-badge" :class="alarmLevel">
@@ -35,7 +35,7 @@
       <view class="content-section">
         <text class="section-label">报警内容</text>
         <view class="content-box">
-          <text class="content-text">{{ alarmData?.description || getAlarmDesc(alarmData?.alarmType) }}</text>
+          <text class="content-text">{{ (alarmData && alarmData.description) ? alarmData.description : getAlarmDesc(alarmData ? alarmData.alarmType : '') }}</text>
         </view>
       </view>
 
@@ -49,7 +49,7 @@
       </view>
 
       <!-- 设备信息 -->
-      <view class="info-section" v-if="alarmData?.deviceId">
+      <view class="info-section" v-if="alarmData && alarmData.deviceId">
         <text class="section-label">设备信息</text>
         <view class="info-row">
           <text class="info-label">设备ID</text>
@@ -99,7 +99,7 @@ const alarmTypeMap = {
 
 // 报警等级
 const alarmLevel = computed(() => {
-  const type = alarmData.value?.alarmType
+  const type = alarmData.value ? alarmData.value.alarmType : ''
   const highLevelTypes = ['fall', 'sos', '摔倒', '跌倒']
   const mediumLevelTypes = ['out_of_bounds', 'obstacle', '障碍物', '越界', '电子围栏越界报警']
   
@@ -110,13 +110,13 @@ const alarmLevel = computed(() => {
 
 // 是否跌倒报警
 const isFallAlarm = computed(() => {
-  const type = alarmData.value?.alarmType
+  const type = alarmData.value ? alarmData.value.alarmType : ''
   return ['fall', '摔倒', '跌倒'].includes(type)
 })
 
 // 地图位置（有报警坐标则使用，否则用默认位置）
-const mapLatitude = computed(() => alarmData.value?.latitude || 39.9042)
-const mapLongitude = computed(() => alarmData.value?.longitude || 116.4074)
+const mapLatitude = computed(() => (alarmData.value && alarmData.value.latitude) ? alarmData.value.latitude : 39.9042)
+const mapLongitude = computed(() => (alarmData.value && alarmData.value.longitude) ? alarmData.value.longitude : 116.4074)
 
 // 地图标记
 const mapMarkers = computed(() => [{
@@ -126,7 +126,7 @@ const mapMarkers = computed(() => [{
   width: 32,
   height: 32,
   callout: {
-    content: getAlarmTitle(alarmData.value?.alarmType),
+    content: getAlarmTitle(alarmData.value ? alarmData.value.alarmType : ''),
     color: '#ffffff',
     fontSize: 12,
     borderRadius: 8,
@@ -139,17 +139,20 @@ const mapMarkers = computed(() => [{
 
 // 获取报警图标
 const getAlarmIcon = (type) => {
-  return alarmTypeMap[type]?.icon || '📢'
+  const info = alarmTypeMap[type]
+  return info ? info.icon : '📢'
 }
 
 // 获取报警标题
 const getAlarmTitle = (type) => {
-  return alarmTypeMap[type]?.title || type || '未知报警'
+  const info = alarmTypeMap[type]
+  return info ? info.title : (type || '未知报警')
 }
 
 // 获取报警描述
 const getAlarmDesc = (type) => {
-  return alarmTypeMap[type]?.desc || `报警类型: ${type || '未知'}`
+  const info = alarmTypeMap[type]
+  return info ? info.desc : ('报警类型: ' + (type || '未知'))
 }
 
 // 格式化时间
@@ -190,7 +193,7 @@ const handleMarkDone = async () => {
 onMounted(() => {
   const pages = getCurrentPages()
   const currentPage = pages[pages.length - 1]
-  alarmId.value = currentPage.options?.id || ''
+  alarmId.value = (currentPage.options && currentPage.options.id) ? currentPage.options.id : ''
   
   const cachedAlarm = uni.getStorageSync('currentAlarm')
   if (cachedAlarm) {

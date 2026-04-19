@@ -121,6 +121,20 @@
 
             <el-tab-pane label="围栏" name="fence">
               <div class="tab-content">
+                <div class="section-block" v-if="fenceList.length > 1">
+                  <div class="section-title"><span>围栏列表 ({{ fenceList.length }})</span></div>
+                  <div class="fence-selector">
+                    <el-button
+                      v-for="(f, idx) in fenceList"
+                      :key="f.id"
+                      :type="idx === currentFenceIndex ? 'primary' : 'default'"
+                      size="small"
+                      @click="switchFence(idx)"
+                    >
+                      {{ f.fenceName || '围栏' + (idx + 1) }}
+                    </el-button>
+                  </div>
+                </div>
                 <div class="section-block">
                   <div class="section-title">
                     <span>电子围栏</span>
@@ -221,6 +235,8 @@ const showTrajectory = ref(false)
 const trajectoryData = ref<any[]>([])
 const latestAlarm = ref<any>(null)
 const fence = ref<any>(null)
+const fenceList = ref<any[]>([])
+const currentFenceIndex = ref(0)
 const fenceForm = ref<any>({
   deviceId: '',
   fenceName: '安全活动区',
@@ -480,11 +496,50 @@ const loadFence = async () => {
       params: { deviceId: deviceInfo.value.deviceId }
     })
     if (response.data.code === 200) {
-      applyFence(response.data.data)
+      const data = response.data.data
+      const list = Array.isArray(data) ? data : (data ? [data] : [])
+      fenceList.value = list
+      currentFenceIndex.value = 0
+      // 应用第一个围栏到表单
+      applyFence(list.length > 0 ? list[0] : null)
+      // 绘制所有围栏圆圈
+      drawAllFences()
     }
   } catch (error) {
     console.error('获取电子围栏失败', error)
   }
+}
+
+const drawAllFences = () => {
+  if (!map) return
+  // 清除旧的额外围栏圆
+  if ((window as any).__extraFenceCircles) {
+    (window as any).__extraFenceCircles.forEach((c: any) => map.remove(c))
+  }
+  (window as any).__extraFenceCircles = []
+  
+  fenceList.value.forEach((f, idx) => {
+    if (f && f.enabled && f.centerLongitude && f.centerLatitude && f.radiusMeters) {
+      const isSelected = idx === currentFenceIndex.value
+      const circle = new window.AMap.Circle({
+        center: [Number(f.centerLongitude), Number(f.centerLatitude)],
+        radius: Number(f.radiusMeters),
+        strokeColor: isSelected ? '#67C23A' : '#409EFF',
+        strokeWeight: isSelected ? 3 : 2,
+        fillColor: isSelected ? '#E1F3D8' : '#D9ECFF',
+        fillOpacity: 0.15
+      })
+      map.add(circle)
+      ;(window as any).__extraFenceCircles.push(circle)
+    }
+  })
+}
+
+const switchFence = (index: number) => {
+  if (index < 0 || index >= fenceList.value.length) return
+  currentFenceIndex.value = index
+  applyFence(fenceList.value[index])
+  drawAllFences()
 }
 
 const useCurrentLocationAsFenceCenter = () => {
@@ -512,16 +567,23 @@ const saveFence = async () => {
     return
   }
   try {
-    const response = await axios.put('/api/fences', {
+    const payload: any = {
       deviceId: deviceInfo.value.deviceId,
       fenceName: fenceForm.value.fenceName,
       centerLatitude: fenceForm.value.centerLatitude,
       centerLongitude: fenceForm.value.centerLongitude,
       radiusMeters: fenceForm.value.radiusMeters,
       enabled: fenceForm.value.enabled
-    })
+    }
+    // 如果当前选中了已有围栏，传id确保更新正确的那一个
+    if (fence.value?.id) {
+      payload.id = fence.value.id
+    }
+    const response = await axios.put('/api/fences', payload)
     if (response.data.code === 200) {
       applyFence(response.data.data)
+      // 刷新围栏列表
+      await loadFence()
       ElMessage.success('电子围栏已保存')
     }
   } catch (error) {
@@ -954,6 +1016,13 @@ onUnmounted(() => {
   gap: 8px;
   margin-top: 12px;
   flex-wrap: wrap;
+}
+
+.fence-selector {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
 }
 
 @media (max-width: 1280px) {

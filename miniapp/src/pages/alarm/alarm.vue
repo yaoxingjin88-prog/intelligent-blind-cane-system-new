@@ -202,7 +202,7 @@ const handleAlarm = async (alarmId, status) => {
     if (alarm) {
       alarm.status = status
       alarm.handleTime = new Date().toISOString()
-      alarm.handler = deviceStore.currentDevice?.userName || '当前用户'
+      alarm.handler = (deviceStore.currentDevice && deviceStore.currentDevice.userName) ? deviceStore.currentDevice.userName : '当前用户'
     }
     
     // 更新store
@@ -244,17 +244,20 @@ const alarmTypeMap = {
 
 // 获取报警图标
 const getAlarmIcon = (type) => {
-  return alarmTypeMap[type]?.icon || '📢'
+  const info = alarmTypeMap[type]
+  return info ? info.icon : '📢'
 }
 
 // 获取报警标题
 const getAlarmTitle = (type) => {
-  return alarmTypeMap[type]?.title || type || '未知报警'
+  const info = alarmTypeMap[type]
+  return info ? info.title : (type || '未知报警')
 }
 
 // 获取报警描述
 const getAlarmDesc = (type) => {
-  return alarmTypeMap[type]?.desc || `报警类型: ${type || '未知'}`
+  const info = alarmTypeMap[type]
+  return info ? info.desc : ('报警类型: ' + (type || '未知'))
 }
 
 // 获取状态文字

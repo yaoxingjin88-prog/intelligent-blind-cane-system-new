@@ -97,6 +97,13 @@
         "navigationBarTitleText": "设备管理",
         "navigationStyle": "default"
       }
+    },
+    {
+      "path": "pages/subpages/user-agreement/user-agreement",
+      "style": {
+        "navigationBarTitleText": "用户协议",
+        "navigationStyle": "default"
+      }
     }
   ],
   "globalStyle": {

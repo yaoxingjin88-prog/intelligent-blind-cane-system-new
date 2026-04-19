@@ -28,10 +28,10 @@ public class ElectronicFenceController {
         return Result.success(electronicFenceService.getAll());
     }
 
-    @Operation(summary = "根据设备编号获取围栏", description = "根据设备编号获取电子围栏设置")
+    @Operation(summary = "根据设备编号获取围栏", description = "根据设备编号获取电子围栏列表")
     @GetMapping
-    public Result<ElectronicFence> getByDeviceId(@RequestParam String deviceId) {
-        return Result.success(electronicFenceService.getByDeviceId(deviceId));
+    public Result<List<ElectronicFence>> getByDeviceId(@RequestParam String deviceId) {
+        return Result.success(electronicFenceService.getListByDeviceId(deviceId));
     }
 
     @Operation(summary = "保存电子围栏", description = "新增或更新设备电子围栏设置")

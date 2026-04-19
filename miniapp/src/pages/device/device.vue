@@ -7,7 +7,7 @@
           v-for="device in deviceList" 
           :key="device.id" 
           class="device-card"
-          :class="{ active: currentDevice?.id === device.id }"
+          :class="{ active: currentDevice && currentDevice.id === device.id }"
           @click="selectDevice(device)"
         >
           <view class="device-icon" :class="device.status">
@@ -38,8 +38,8 @@
     </scroll-view>
 
     <!-- 绑定设备弹窗 -->
-    <u-popup v-if="!showManualBind" v-model:show="showBindModal" mode="center" round="20">
-      <view class="bind-modal">
+    <view v-if="showBindModal && !showManualBind" class="popup-mask" @click="showBindModal = false">
+      <view class="bind-modal" @click.stop>
         <view class="modal-header">
           <text class="title">绑定设备</text>
           <text class="close" @click="showBindModal = false">✕</text>
@@ -59,11 +59,11 @@
           </view>
         </view>
       </view>
-    </u-popup>
+    </view>
 
     <!-- 手动绑定弹窗 -->
-    <u-popup v-if="showManualBind" v-model:show="showManualBind" mode="center" round="20">
-      <view class="manual-bind-modal">
+    <view v-if="showManualBind" class="popup-mask" @click="showManualBind = false">
+      <view class="manual-bind-modal" @click.stop>
         <view class="modal-header">
           <text class="title">手动输入设备ID</text>
           <text class="close" @click="showManualBind = false">✕</text>
@@ -83,7 +83,7 @@
           <button class="confirm-btn" @click="confirmBind">确认绑定</button>
         </view>
       </view>
-    </u-popup>
+    </view>
   </view>
 </template>
 
@@ -207,7 +207,7 @@ const unbindDevice = (device) => {
           })
           
           // 如果解绑的是当前设备，清除当前设备
-          if (currentDevice.value?.id === device.id) {
+          if (currentDevice.value && currentDevice.value.id === device.id) {
             deviceStore.currentDevice = null
           }
           
@@ -365,18 +365,27 @@ const unbindDevice = (device) => {
   }
 }
 
+.popup-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .bind-modal,
 .manual-bind-modal {
   width: 600rpx;
   max-width: 90vw;
   padding: 48rpx;
   box-sizing: border-box;
-  margin: 0 auto;
   background: #ffffff;
   border-radius: 24rpx;
-  position: relative;
-  left: 0;
-  right: 0;
 
   .modal-header {
     display: flex;

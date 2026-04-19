@@ -5,10 +5,13 @@
         <h2>电子围栏管理</h2>
         <p>集中查看所有设备围栏配置、启用状态与越界情况</p>
       </div>
-      <el-button type="primary" @click="openCreateDialog">
-        <el-icon><Plus /></el-icon>
-        新建围栏
-      </el-button>
+      <div class="hero-actions">
+        <el-button @click="router.push('/trajectory-playback')">查看轨迹回放</el-button>
+        <el-button type="primary" @click="openCreateDialog">
+          <el-icon><Plus /></el-icon>
+          新建围栏
+        </el-button>
+      </div>
     </div>
 
     <div class="stats-grid">
@@ -43,63 +46,69 @@
             <span>围栏列表</span>
             <p class="header-subtitle">支持统一编辑围栏名称、半径、中心点与启用状态</p>
           </div>
-          <el-tag type="primary" effect="plain">{{ filteredFences.length }} 台设备</el-tag>
+          <el-tag type="primary" effect="plain">{{ filteredFences.length }} 条记录</el-tag>
         </div>
       </template>
 
+      <div class="fence-table-wrap">
       <el-table :data="filteredFences" class="fence-table" stripe>
-        <el-table-column prop="deviceId" label="设备ID" min-width="130" />
-        <el-table-column label="关联用户" min-width="160">
+        <el-table-column prop="deviceId" label="设备ID" min-width="110" show-overflow-tooltip />
+        <el-table-column label="关联用户" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.userName || '未关联用户' }}
           </template>
         </el-table-column>
-        <el-table-column label="围栏名称" min-width="160">
+        <el-table-column label="围栏名称" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.fenceName || '未配置围栏' }}
           </template>
         </el-table-column>
-        <el-table-column label="围栏半径" width="120" align="center">
+        <el-table-column label="围栏半径" width="90" align="center">
           <template #default="{ row }">
             {{ row.hasFence ? `${Number(row.radiusMeters || 0)} m` : '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="中心坐标" min-width="210">
+        <el-table-column label="中心坐标" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             {{ formatCoordinate(row.centerLongitude, row.centerLatitude) }}
           </template>
         </el-table-column>
-        <el-table-column label="启用状态" width="110" align="center">
+        <el-table-column label="启用状态" width="92" align="center">
           <template #default="{ row }">
             <el-tag :type="row.hasFence ? (row.enabled ? 'success' : 'info') : 'warning'" effect="light">
               {{ row.hasFence ? (row.enabled ? '启用中' : '已停用') : '未配置' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="边界状态" width="110" align="center">
+        <el-table-column label="边界状态" width="92" align="center">
           <template #default="{ row }">
             <el-tag :type="!row.hasFence ? 'info' : (String(row.lastStatus).toUpperCase() === 'OUTSIDE' ? 'danger' : 'success')" effect="light">
               {{ !row.hasFence ? '未配置' : (String(row.lastStatus).toUpperCase() === 'OUTSIDE' ? '已越界' : '安全区内') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="更新时间" min-width="170">
+        <el-table-column label="更新时间" min-width="145" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.updatedAt || '-' }}
           </template>
         </el-table-column>
         <el-table-column label="操作" width="220" align="center">
           <template #default="{ row }">
-            <el-button v-if="!row.hasFence" type="primary" link size="small" @click="quickCreateFence(row)">一键启用</el-button>
-            <el-button type="primary" link size="small" @click="openEditDialog(row)">{{ row.hasFence ? '编辑' : '高级配置' }}</el-button>
-            <el-button type="success" link size="small" @click="goToMonitor(row)">监控详情</el-button>
-            <el-button type="warning" link size="small" @click="goToPlayback(row)">轨迹回放</el-button>
+            <div class="action-cell">
+              <div class="action-cell__links">
+                <el-button v-if="!row.hasFence" type="primary" link size="small" @click="quickCreateFence(row)">一键启用</el-button>
+                <el-button type="primary" link size="small" @click="openEditDialog(row)">{{ row.hasFence ? '编辑' : '高级配置' }}</el-button>
+                <el-button type="success" link size="small" @click="goToMonitor(row)">监控详情</el-button>
+              </div>
+              <el-button type="warning" plain size="small" class="action-cell__playback" @click="goToPlayback(row)">轨迹回放</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
+      </div>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新建围栏' : '编辑围栏'" width="520px">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新建围栏' : '编辑围栏'" width="860px">
       <el-form :model="fenceForm" label-width="90px">
         <el-form-item label="设备">
           <el-select v-model="fenceForm.deviceId" placeholder="请选择设备" filterable :disabled="dialogMode === 'edit'" style="width: 100%">
@@ -126,6 +135,18 @@
         <el-form-item label="启用状态">
           <el-switch v-model="fenceForm.enabled" active-text="启用" inactive-text="停用" />
         </el-form-item>
+        <el-form-item label="地图选点">
+          <div class="fence-map-panel">
+            <div class="fence-map-toolbar">
+              <span>点击地图即可设置围栏中心，圆形范围会随半径实时预览</span>
+              <div class="fence-map-actions">
+                <el-button text type="primary" @click="fillFenceCenterFromLatestLocation">使用最新位置</el-button>
+                <el-button text @click="centerFenceMapOnCurrentValue">定位到当前中心</el-button>
+              </div>
+            </div>
+            <div ref="fenceMapContainerRef" class="fence-map-container"></div>
+          </div>
+        </el-form-item>
         <el-form-item>
           <div class="location-helper">
             <span>{{ locationHint }}</span>
@@ -144,7 +165,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -158,6 +179,7 @@ const statusFilter = ref('all')
 const boundaryFilter = ref('all')
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
+const fenceMapContainerRef = ref(null)
 const fenceForm = ref({
   deviceId: '',
   fenceName: '安全活动区',
@@ -169,31 +191,48 @@ const fenceForm = ref({
 })
 const locationHint = ref('如不手动修改，系统会优先使用设备最新位置作为围栏中心')
 
+let fenceMap = null
+let fenceMapMarker = null
+let fenceMapCircle = null
+
 const fenceRows = computed(() => {
-  const fenceMap = new Map(fences.value.map(item => [item.deviceId, item]))
-  return devices.value.map(device => {
-    const fence = fenceMap.get(device.deviceId)
-    if (fence) {
-      return {
-        ...fence,
-        userName: device.userName || '',
-        hasFence: true
-      }
+  // 按设备分组，一个设备可能有多个围栏
+  const deviceFenceMap = new Map()
+  fences.value.forEach(item => {
+    if (!deviceFenceMap.has(item.deviceId)) {
+      deviceFenceMap.set(item.deviceId, [])
     }
-    return {
-      id: `device-${device.id}`,
-      deviceId: device.deviceId,
-      userName: device.userName || '',
-      fenceName: '',
-      centerLatitude: null,
-      centerLongitude: null,
-      radiusMeters: null,
-      enabled: false,
-      lastStatus: '',
-      updatedAt: '',
-      hasFence: false
+    deviceFenceMap.get(item.deviceId).push(item)
+  })
+  
+  const rows = []
+  devices.value.forEach(device => {
+    const deviceFences = deviceFenceMap.get(device.deviceId)
+    if (deviceFences && deviceFences.length > 0) {
+      deviceFences.forEach(fence => {
+        rows.push({
+          ...fence,
+          userName: device.userName || '',
+          hasFence: true
+        })
+      })
+    } else {
+      rows.push({
+        id: `device-${device.id}`,
+        deviceId: device.deviceId,
+        userName: device.userName || '',
+        fenceName: '',
+        centerLatitude: null,
+        centerLongitude: null,
+        radiusMeters: null,
+        enabled: false,
+        lastStatus: '',
+        updatedAt: '',
+        hasFence: false
+      })
     }
   })
+  return rows
 })
 
 const deviceOptions = computed(() => {
@@ -235,6 +274,81 @@ const formatCoordinate = (lng, lat) => {
   return `${Number(lng).toFixed(4)}, ${Number(lat).toFixed(4)}`
 }
 
+const syncFenceMapPreview = (fitView = false) => {
+  if (!fenceMap || !window.AMap) return
+  if (fenceForm.value.centerLongitude == null || fenceForm.value.centerLatitude == null) {
+    if (fenceMapMarker) {
+      fenceMap.remove(fenceMapMarker)
+      fenceMapMarker = null
+    }
+    if (fenceMapCircle) {
+      fenceMap.remove(fenceMapCircle)
+      fenceMapCircle = null
+    }
+    return
+  }
+
+  const center = [Number(fenceForm.value.centerLongitude), Number(fenceForm.value.centerLatitude)]
+  if (!fenceMapMarker) {
+    fenceMapMarker = new window.AMap.Marker({
+      position: center,
+      offset: new window.AMap.Pixel(-10, -10)
+    })
+    fenceMap.add(fenceMapMarker)
+  } else {
+    fenceMapMarker.setPosition(center)
+  }
+
+  if (!fenceMapCircle) {
+    fenceMapCircle = new window.AMap.Circle({
+      center,
+      radius: Number(fenceForm.value.radiusMeters || 300),
+      strokeColor: '#2563eb',
+      strokeWeight: 2,
+      strokeOpacity: 0.85,
+      fillColor: '#60a5fa',
+      fillOpacity: 0.18
+    })
+    fenceMap.add(fenceMapCircle)
+  } else {
+    fenceMapCircle.setCenter(center)
+    fenceMapCircle.setRadius(Number(fenceForm.value.radiusMeters || 300))
+  }
+
+  if (fitView) {
+    fenceMap.setCenter(center)
+    fenceMap.setZoom(16)
+  }
+}
+
+const centerFenceMapOnCurrentValue = () => {
+  if (!fenceMap || fenceForm.value.centerLongitude == null || fenceForm.value.centerLatitude == null) return
+  fenceMap.setCenter([Number(fenceForm.value.centerLongitude), Number(fenceForm.value.centerLatitude)])
+  fenceMap.setZoom(16)
+}
+
+const initFenceMap = async () => {
+  if (!dialogVisible.value) return
+  await nextTick()
+  if (!window.AMap || !fenceMapContainerRef.value) return
+  if (!fenceMap) {
+    fenceMap = new window.AMap.Map(fenceMapContainerRef.value, {
+      zoom: 13,
+      center: [116.4074, 39.9042],
+      viewMode: '2D'
+    })
+    fenceMap.on('click', (event) => {
+      fenceForm.value.centerLongitude = Number(event.lnglat.lng.toFixed(6))
+      fenceForm.value.centerLatitude = Number(event.lnglat.lat.toFixed(6))
+      locationHint.value = `已通过地图选点设置中心：${formatCoordinate(event.lnglat.lng, event.lnglat.lat)}`
+      syncFenceMapPreview(true)
+    })
+  } else {
+    fenceMap.resize()
+  }
+  syncFenceMapPreview(true)
+}
+
 const fillFenceCenterFromLatestLocation = async () => {
   if (!fenceForm.value.deviceId) {
     ElMessage.warning('请先选择设备')
@@ -251,6 +365,7 @@ const fillFenceCenterFromLatestLocation = async () => {
       fenceForm.value.centerLatitude = response.data.data.latitude
       fenceForm.value.centerLongitude = response.data.data.longitude
       locationHint.value = `已自动带入最新位置：${formatCoordinate(response.data.data.longitude, response.data.data.latitude)}`
+      syncFenceMapPreview(true)
       return true
     }
     locationHint.value = '当前设备暂无最新位置数据，请手动填写经纬度'
@@ -277,6 +392,7 @@ const openCreateDialog = () => {
   locationHint.value = '如不手动修改，系统会优先使用设备最新位置作为围栏中心'
   dialogMode.value = 'create'
   dialogVisible.value = true
+  initFenceMap()
 }
 
 const openEditDialog = async (row) => {
@@ -294,6 +410,7 @@ const openEditDialog = async (row) => {
     ? '如需重设围栏中心，可一键带入设备最新位置'
     : '未配置围栏时，建议直接使用设备最新位置作为中心'
   dialogVisible.value = true
+  await initFenceMap()
   if (!row.hasFence) {
     await fillFenceCenterFromLatestLocation()
   }
@@ -335,12 +452,13 @@ const fetchFences = async () => {
         )
         fences.value = results
           .filter(result => result.status === 'fulfilled' && result.value.data.code === 200 && result.value.data.data)
-          .map(result => {
-            const item = result.value.data.data
-            return {
+          .flatMap(result => {
+            const data = result.value.data.data
+            const items = Array.isArray(data) ? data : [data]
+            return items.map(item => ({
               ...item,
               userName: deviceMap.get(item.deviceId)?.userName || ''
-            }
+            }))
           })
         return
       } catch (fallbackError) {
@@ -449,6 +567,23 @@ const goToPlayback = (row) => {
 onMounted(() => {
   refreshData()
 })
+
+watch(dialogVisible, (visible) => {
+  if (visible) {
+    initFenceMap()
+  }
+})
+
+watch(() => [fenceForm.value.centerLongitude, fenceForm.value.centerLatitude, fenceForm.value.radiusMeters], () => {
+  syncFenceMapPreview()
+})
+
+onUnmounted(() => {
+  if (fenceMap) {
+    fenceMap.destroy()
+    fenceMap = null
+  }
+})
 </script>
 
 <style scoped>
@@ -467,6 +602,12 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .page-hero h2 {
@@ -552,10 +693,68 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.fence-map-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fence-map-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.fence-map-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fence-map-container {
+  width: 100%;
+  height: 320px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #dbeafe;
+}
+
 .fence-table :deep(.el-table__header th) {
   background: #f8fafc;
   color: #475569;
   font-weight: 600;
+}
+
+.fence-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.fence-table {
+  min-width: 1120px;
+}
+
+.action-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-cell__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 6px;
+  line-height: 1.2;
+}
+
+.action-cell__playback {
+  min-width: 76px;
 }
 
 @media (max-width: 1280px) {
@@ -580,6 +779,11 @@ onMounted(() => {
   }
 
   .location-helper {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .fence-map-toolbar {
     flex-direction: column;
     align-items: flex-start;
   }

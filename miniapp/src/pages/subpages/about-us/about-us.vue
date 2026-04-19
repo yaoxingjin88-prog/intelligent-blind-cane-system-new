@@ -35,6 +35,9 @@
   </view>
 </template>
 
+<script setup>
+</script>
+
 <style lang="scss" scoped>
 .about-us-page {
   min-height: 100vh;

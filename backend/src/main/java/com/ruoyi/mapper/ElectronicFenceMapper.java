@@ -1,11 +1,7 @@
 package com.ruoyi.mapper;
 
 import com.ruoyi.entity.ElectronicFence;
-import org.apache.ibatis.annotations.Insert;
-import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Options;
-import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.Update;
+import org.apache.ibatis.annotations.*;
 
  import java.util.List;
 
@@ -26,4 +22,13 @@ public interface ElectronicFenceMapper {
 
     @Update("UPDATE electronic_fence SET last_status = #{lastStatus}, updated_at = CURRENT_TIMESTAMP WHERE id = #{id}")
     void updateLastStatus(ElectronicFence fence);
+
+    @Select("SELECT id, device_id as deviceId, fence_name as fenceName, center_latitude as centerLatitude, center_longitude as centerLongitude, radius_meters as radiusMeters, enabled, last_status as lastStatus, created_at as createdAt, updated_at as updatedAt FROM electronic_fence WHERE id = #{id}")
+    ElectronicFence getById(Long id);
+
+    @Select("SELECT id, device_id as deviceId, fence_name as fenceName, center_latitude as centerLatitude, center_longitude as centerLongitude, radius_meters as radiusMeters, enabled, last_status as lastStatus, created_at as createdAt, updated_at as updatedAt FROM electronic_fence WHERE device_id = #{deviceId} ORDER BY updated_at DESC")
+    List<ElectronicFence> getListByDeviceId(String deviceId);
+
+    @Delete("DELETE FROM electronic_fence WHERE id = #{id}")
+    void deleteById(Long id);
 }

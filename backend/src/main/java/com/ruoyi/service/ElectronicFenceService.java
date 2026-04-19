@@ -29,9 +29,23 @@ public class ElectronicFenceService {
         return normalizeAndPersistIfNeeded(fence);
     }
 
+    public List<ElectronicFence> getListByDeviceId(String deviceId) {
+        return electronicFenceMapper.getListByDeviceId(deviceId)
+                .stream()
+                .map(this::normalizeAndPersistIfNeeded)
+                .collect(Collectors.toList());
+    }
+
     public ElectronicFence save(ElectronicFence fence) {
         normalizeFence(fence);
-        ElectronicFence existing = electronicFenceMapper.getByDeviceId(fence.getDeviceId());
+        // 如果传了id，按id查找并更新
+        ElectronicFence existing = null;
+        if (fence.getId() != null) {
+            existing = electronicFenceMapper.getById(fence.getId());
+        }
+        if (existing == null) {
+            existing = electronicFenceMapper.getByDeviceId(fence.getDeviceId());
+        }
         if (existing == null) {
             if (fence.getLastStatus() == null || fence.getLastStatus().isBlank()) {
                 fence.setLastStatus("INSIDE");

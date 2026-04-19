@@ -260,7 +260,7 @@ const handlePhoneLogin = async () => {
     uni.showToast({ title: '登录成功', icon: 'success' })
     
     setTimeout(() => {
-      uni.reLaunch({
+      uni.switchTab({
         url: '/pages/home/home'
       })
     }, 1500)
@@ -274,10 +274,11 @@ const handlePhoneLogin = async () => {
 
 // 显示协议
 const showAgreement = (type) => {
-  const title = type === 'user' ? '用户协议' : '隐私政策'
-  uni.navigateTo({
-    url: `/pages/subpages/${type === 'user' ? 'user-agreement' : 'privacy-policy'}`
-  })
+  if (type === 'user') {
+    uni.navigateTo({ url: '/pages/subpages/user-agreement/user-agreement' })
+  } else {
+    uni.navigateTo({ url: '/pages/subpages/privacy-policy/privacy-policy' })
+  }
 }
 
 // 切换登录/注册模式
@@ -314,7 +315,7 @@ const handleWechatLogin = async () => {
           uni.showToast({ title: '登录成功', icon: 'success' })
           
           setTimeout(() => {
-            uni.reLaunch({
+            uni.switchTab({
               url: '/pages/home/home'
             })
           }, 1500)
@@ -360,7 +361,11 @@ const handleRegister = async () => {
     })
     
     uni.showToast({ title: '注册成功', icon: 'success' })
-    showRegister.value = false
+    
+    // 自动切换到登录模式并填充手机号
+    isRegister.value = false
+    formData.phone = registerForm.phone
+    formData.code = registerForm.code
     
     // 自动登录
     setTimeout(() => {

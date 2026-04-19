@@ -1,4 +1,4 @@
-import { get, post } from './index'
+import { get, post, put } from './index'
 
 // 登录
 export const login = (data) => {

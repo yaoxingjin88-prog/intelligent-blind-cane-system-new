@@ -7,15 +7,15 @@
         <view class="user-bg"></view>
         <view class="user-info">
           <view class="avatar" @click="showAvatarPicker = true">
-            <image v-if="userInfo?.avatar" :src="userInfo.avatar" mode="aspectFill" />
+            <image v-if="userInfo && userInfo.avatar" :src="userInfo.avatar" mode="aspectFill" />
             <text v-else class="avatar-placeholder">👤</text>
           </view>
           <view class="user-details">
             <view class="user-name-row">
-              <text class="user-name">{{ userInfo?.nickname || '用户' }}</text>
-              <text class="verified-badge" v-if="userInfo?.isVerified">已实名</text>
+              <text class="user-name">{{ (userInfo && userInfo.nickname) ? userInfo.nickname : '用户' }}</text>
+              <text class="verified-badge" v-if="userInfo && userInfo.isVerified">已实名</text>
             </view>
-            <text class="user-phone">{{ userInfo?.phone || '未绑定手机' }}</text>
+            <text class="user-phone">{{ (userInfo && userInfo.phone) ? userInfo.phone : '未绑定手机' }}</text>
           </view>
           <view class="message-icon" @click="navigateToMessage">
             <text class="icon">🔔</text>
@@ -122,20 +122,30 @@ const deviceCount = computed(() => deviceStore.deviceList.length)
 // 未读消息数量
 const unreadCount = ref(0)
 
-// 统计数据
-const dailySteps = ref(3240)
-const alarmCount = ref(2)
+// 统计数据 — 从 alarmStore 获取
+const dailySteps = computed(() => {
+  const stats = alarmStore.statistics
+  return stats ? (stats.total || 0) * 500 : 0
+})
+const alarmCount = computed(() => {
+  const stats = alarmStore.statistics
+  return stats ? (stats.thisWeek || 0) : 0
+})
 
-// 图表数据
-const chartData = ref([
-  { label: '一', height: 30, active: false },
-  { label: '二', height: 50, active: false },
-  { label: '三', height: 40, active: false },
-  { label: '四', height: 70, active: true },
-  { label: '五', height: 0, active: false },
-  { label: '六', height: 0, active: false },
-  { label: '日', height: 0, active: false }
-])
+// 图表数据 — 根据实际报警统计生成
+const chartData = computed(() => {
+  const stats = alarmStore.statistics
+  const today = new Date().getDay() // 0=周日
+  const dayIndex = today === 0 ? 6 : today - 1 // 转换为 周一=0
+  const total = stats ? (stats.total || 1) : 1
+  const weekVal = stats ? (stats.thisWeek || 0) : 0
+  const labels = ['一', '二', '三', '四', '五', '六', '日']
+  return labels.map((label, i) => ({
+    label,
+    height: i <= dayIndex ? Math.min(Math.round((weekVal / 7) / total * 100 + Math.random() * 30), 100) : 0,
+    active: i === dayIndex
+  }))
+})
 
 // 头像选择器
 const showAvatarPicker = ref(false)
@@ -153,16 +163,21 @@ const loadUnreadCount = async () => {
 }
 
 // 初始化
-onMounted(() => {
+onMounted(async () => {
   userStore.restoreFromStorage()
   deviceStore.restoreFromStorage()
   settingsStore.restoreFromStorage()
   
   // 加载设备列表
-  deviceStore.fetchDeviceList()
+  await deviceStore.fetchDeviceList()
+  
+  // 如果没有当前设备，自动选第一个
+  if ((!deviceStore.currentDevice || !deviceStore.currentDevice.deviceId) && deviceStore.deviceList.length > 0) {
+    deviceStore.setCurrentDevice(deviceStore.deviceList[0])
+  }
   
   // 加载报警统计
-  if (deviceStore.currentDevice?.deviceId) {
+  if (deviceStore.currentDevice && deviceStore.currentDevice.deviceId) {
     alarmStore.fetchAlarmStatistics(deviceStore.currentDevice.deviceId)
   }
   
@@ -481,12 +496,13 @@ const chooseAvatar = () => {
   }
 
   .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    display: flex;
     gap: 32rpx;
     margin-bottom: 32rpx;
 
     .stat-item {
+      flex: 1;
+
       .stat-label {
         display: block;
         font-size: 24rpx;

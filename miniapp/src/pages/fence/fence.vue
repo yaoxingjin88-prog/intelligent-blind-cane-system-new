@@ -68,20 +68,24 @@
 
       <!-- 时间选择 -->
       <view class="time-selector">
-        <view class="time-item" @click="showDatePicker = true">
-          <text class="time-label">开始时间</text>
-          <text class="time-value">{{ formatDateTime(startTime) }}</text>
-        </view>
+        <picker mode="date" :value="startDateStr" @change="onStartDateChange">
+          <view class="time-item">
+            <text class="time-label">开始时间</text>
+            <text class="time-value">{{ startDateStr }}</text>
+          </view>
+        </picker>
         <text class="to">至</text>
-        <view class="time-item" @click="showDatePicker = true">
-          <text class="time-label">结束时间</text>
-          <text class="time-value">{{ formatDateTime(endTime) }}</text>
-        </view>
+        <picker mode="date" :value="endDateStr" @change="onEndDateChange">
+          <view class="time-item">
+            <text class="time-label">结束时间</text>
+            <text class="time-value">{{ endDateStr }}</text>
+          </view>
+        </picker>
       </view>
 
       <!-- 播放控制 -->
       <view class="playback-controls">
-        <button class="control-btn" @click="startPlayback" :disabled="!isPlaying">
+        <button class="control-btn" @click="startPlayback">
           <text>{{ isPlaying ? '⏸️' : '▶️' }}</text>
         </button>
         <view class="speed-selector">
@@ -176,22 +180,14 @@
       </view>
     </view>
 
-    <!-- 日期选择器 -->
-    <u-datetime-picker
-      v-model="selectedDate"
-      :show="showDatePicker"
-      mode="datetime"
-      @confirm="onDateConfirm"
-      @cancel="showDatePicker = false"
-    ></u-datetime-picker>
   </view>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useDeviceStore } from '@/store'
 import { getFenceList, createFence as createFenceApi, updateFence } from '@/api/fence'
-import { getTrajectory } from '@/api/trajectory'
+import { getTrajectory, getTrajectoryStatistics } from '@/api/trajectory'
 import { formatDateTime, formatDistance } from '@/utils'
 
 const deviceStore = useDeviceStore()
@@ -199,13 +195,11 @@ const deviceStore = useDeviceStore()
 // 当前模块
 const activeModule = ref('fence')
 const showCreateFence = ref(false)
-const showDatePicker = ref(false)
 
 // 切换模块时关闭弹窗
 const switchModule = (module) => {
   activeModule.value = module
   showCreateFence.value = false
-  showDatePicker.value = false
 }
 
 // 地图中心
@@ -215,26 +209,51 @@ const mapCenter = ref({
 })
 
 // 围栏列表
-const fenceList = ref([
-  {
-    id: 1,
-    name: '家周边',
-    type: 'circle',
-    radius: 500,
-    isAlarmEnabled: true,
-    status: 'active',
-    center: { longitude: 116.4074, latitude: 39.9042 }
-  },
-  {
-    id: 2,
-    name: '社区公园',
-    type: 'circle',
-    radius: 200,
-    isAlarmEnabled: true,
-    status: 'active',
-    center: { longitude: 116.4150, latitude: 39.9100 }
+const fenceList = ref([])
+
+// 加载围栏列表
+const loadFenceList = async () => {
+  const deviceId = deviceStore.currentDevice ? deviceStore.currentDevice.deviceId : ''
+  if (!deviceId) {
+    fenceList.value = []
+    return
   }
-])
+  try {
+    const res = await getFenceList(deviceId)
+    fenceList.value = res.data || []
+  } catch (error) {
+    console.error('加载围栏列表失败', error)
+  }
+}
+
+onMounted(async () => {
+  deviceStore.restoreFromStorage()
+  
+  // 自动获取设备列表和位置
+  if (!deviceStore.currentDevice || !deviceStore.currentDevice.deviceId) {
+    try {
+      await deviceStore.fetchDeviceList()
+      if (deviceStore.deviceList.length > 0) {
+        deviceStore.setCurrentDevice(deviceStore.deviceList[0])
+      }
+    } catch (e) { /* ignore */ }
+  }
+  
+  if (deviceStore.currentDevice && deviceStore.currentDevice.deviceId) {
+    try {
+      await deviceStore.fetchDeviceLocation(deviceStore.currentDevice.deviceId)
+      // 将地图中心移到设备位置
+      if (deviceStore.deviceLocation) {
+        mapCenter.value = {
+          longitude: deviceStore.deviceLocation.longitude,
+          latitude: deviceStore.deviceLocation.latitude
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }
+  
+  loadFenceList()
+})
 
 // 新建围栏
 const newFence = ref({
@@ -270,9 +289,9 @@ const fencePolygons = computed(() => {
     }))
 })
 
-// 围栏标记
+// 围栏标记（含设备位置）
 const fenceMarkers = computed(() => {
-  return fenceList.value.map(fence => ({
+  const markers = fenceList.value.map(fence => ({
     id: fence.id,
     longitude: fence.center.longitude,
     latitude: fence.center.latitude,
@@ -287,15 +306,62 @@ const fenceMarkers = computed(() => {
       padding: 8
     }
   }))
+  // 添加设备位置标记
+  if (deviceStore.deviceLocation) {
+    markers.push({
+      id: 99999,
+      longitude: deviceStore.deviceLocation.longitude,
+      latitude: deviceStore.deviceLocation.latitude,
+      width: 28,
+      height: 36,
+      callout: {
+        content: '盲杖位置',
+        color: '#ffffff',
+        fontSize: 12,
+        borderRadius: 8,
+        bgColor: '#07c160',
+        padding: 6,
+        display: 'ALWAYS'
+      }
+    })
+  }
+  return markers
 })
 
 // 轨迹相关
 const startTime = ref(new Date(Date.now() - 24 * 60 * 60 * 1000))
 const endTime = ref(new Date())
-const selectedDate = ref(new Date())
 const isPlaying = ref(false)
+
+// 格式化日期字符串 YYYY-MM-DD
+const toDateStr = (date) => {
+  const d = new Date(date)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return y + '-' + m + '-' + day
+}
+const startDateStr = computed(() => toDateStr(startTime.value))
+const endDateStr = computed(() => toDateStr(endTime.value))
+
+const onStartDateChange = (e) => {
+  startTime.value = new Date(e.detail.value + ' 00:00:00')
+}
+const onEndDateChange = (e) => {
+  endTime.value = new Date(e.detail.value + ' 23:59:59')
+}
 const currentSpeed = ref(1)
 const speeds = [1, 2, 4]
+
+// 播放中切速度时重启定时器
+watch(currentSpeed, () => {
+  if (isPlaying.value && playbackTimer) {
+    clearInterval(playbackTimer)
+    playbackTimer = null
+    runAnimation()
+  }
+})
+
 const totalDistance = ref(0)
 const activityDuration = ref(0)
 const avgSpeed = ref(0)
@@ -353,7 +419,7 @@ const createFence = async () => {
   try {
     const res = await createFenceApi({
       ...newFence.value,
-      deviceId: deviceStore.currentDevice?.deviceId,
+      deviceId: deviceStore.currentDevice ? deviceStore.currentDevice.deviceId : '',
       center: mapCenter.value
     })
     
@@ -377,75 +443,162 @@ const createFence = async () => {
   }
 }
 
+// 轨迹动画相关
+let trajectoryPoints = []
+let playbackTimer = null
+let playbackIndex = 0
+
+// 停止播放动画
+const stopPlayback = () => {
+  if (playbackTimer) {
+    clearInterval(playbackTimer)
+    playbackTimer = null
+  }
+  isPlaying.value = false
+}
+
 // 开始播放
 const startPlayback = async () => {
+  // 正在播放则暂停
   if (isPlaying.value) {
-    isPlaying.value = false
+    stopPlayback()
     return
   }
 
+  // 如果已有轨迹数据且暂停过，继续播放
+  if (trajectoryPoints.length > 0 && playbackIndex > 0 && playbackIndex < trajectoryPoints.length) {
+    isPlaying.value = true
+    runAnimation()
+    return
+  }
+
+  // 首次加载轨迹数据
   try {
-    const deviceId = deviceStore.currentDevice?.deviceId
-    if (deviceId) {
-      const res = await getTrajectory(deviceId, {
+    const deviceId = deviceStore.currentDevice ? deviceStore.currentDevice.deviceId : null
+    if (!deviceId) {
+      uni.showToast({ title: '请先绑定设备', icon: 'none' })
+      return
+    }
+
+    const res = await getTrajectory(deviceId, {
+      startTime: formatDateTime(startTime.value, 'YYYY-MM-DD HH:mm:ss'),
+      endTime: formatDateTime(endTime.value, 'YYYY-MM-DD HH:mm:ss')
+    })
+    
+    const points = res.data || []
+    if (points.length === 0) {
+      uni.showToast({ title: '该时间段无轨迹数据', icon: 'none' })
+      return
+    }
+
+    trajectoryPoints = points
+    playbackIndex = 0
+
+    // 先画完整轨迹线（灰色虚线表示全程）
+    trajectoryPolyline.value = [{
+      points: points.map(p => ({ longitude: p.longitude, latitude: p.latitude })),
+      color: '#cccccc',
+      width: 3,
+      dottedLine: true
+    }]
+
+    // 起点标记
+    trajectoryMarkers.value = [{
+      id: 1,
+      longitude: points[0].longitude,
+      latitude: points[0].latitude,
+      width: 20,
+      height: 28,
+      callout: { content: '起点', color: '#fff', fontSize: 11, borderRadius: 8, bgColor: '#07c160', padding: 5, display: 'ALWAYS' }
+    }, {
+      id: 2,
+      longitude: points[points.length - 1].longitude,
+      latitude: points[points.length - 1].latitude,
+      width: 20,
+      height: 28,
+      callout: { content: '终点', color: '#fff', fontSize: 11, borderRadius: 8, bgColor: '#ee0a24', padding: 5, display: 'ALWAYS' }
+    }, {
+      id: 3,
+      longitude: points[0].longitude,
+      latitude: points[0].latitude,
+      width: 28,
+      height: 28,
+      callout: { content: '🚶', fontSize: 16, borderRadius: 50, bgColor: '#07c160', padding: 4, display: 'ALWAYS' }
+    }]
+
+    // 获取统计数据
+    try {
+      const statsRes = await getTrajectoryStatistics(deviceId, {
         startTime: formatDateTime(startTime.value, 'YYYY-MM-DD HH:mm:ss'),
         endTime: formatDateTime(endTime.value, 'YYYY-MM-DD HH:mm:ss')
       })
-      
-      const points = res.data || []
-      if (points.length === 0) {
-        uni.showToast({
-          title: '该时间段无轨迹数据',
-          icon: 'none'
-        })
-        return
-      }
-
-      // 设置轨迹线
-      trajectoryPolyline.value = [{
-        points: points.map(p => ({
-          longitude: p.longitude,
-          latitude: p.latitude
-        })),
-        color: '#07c160',
-        width: 4,
-        dottedLine: false
-      }]
-
-      // 设置标记
-      trajectoryMarkers.value = [{
-        id: 1,
-        longitude: points[0].longitude,
-        latitude: points[0].latitude,
-        iconPath: '/static/images/start-marker.png',
-        width: 32,
-        height: 32
-      }, {
-        id: 2,
-        longitude: points[points.length - 1].longitude,
-        latitude: points[points.length - 1].latitude,
-        iconPath: '/static/images/end-marker.png',
-        width: 32,
-        height: 32
-      }]
-
-      // 计算统计数据
-      totalDistance.value = formatDistance(res.totalDistance || 0)
-      activityDuration.value = (res.duration || 0) / 3600
-      avgSpeed.value = res.avgSpeed || 0
-
-      isPlaying.value = true
+      const stats = statsRes.data || {}
+      totalDistance.value = formatDistance(stats.totalDistance || 0)
+      activityDuration.value = Math.round(((stats.duration || 0) / 3600) * 10) / 10
+      avgSpeed.value = stats.avgSpeed || 0
+    } catch (e) {
+      console.error('获取轨迹统计失败', e)
     }
+
+    isPlaying.value = true
+    runAnimation()
   } catch (error) {
     console.error('加载轨迹失败', error)
   }
 }
 
-// 日期确认
-const onDateConfirm = (e) => {
-  selectedDate.value = e.value
-  showDatePicker.value = false
+// 运行动画
+const runAnimation = () => {
+  const interval = Math.max(100, 800 / currentSpeed.value)
+  
+  playbackTimer = setInterval(() => {
+    playbackIndex++
+    
+    if (playbackIndex >= trajectoryPoints.length) {
+      stopPlayback()
+      uni.showToast({ title: '播放完成', icon: 'success' })
+      return
+    }
+
+    const current = trajectoryPoints[playbackIndex]
+    
+    // 更新已走过的路径（绿色实线）
+    const walkedPoints = trajectoryPoints.slice(0, playbackIndex + 1).map(p => ({
+      longitude: p.longitude, latitude: p.latitude
+    }))
+    
+    trajectoryPolyline.value = [
+      {
+        points: trajectoryPoints.map(p => ({ longitude: p.longitude, latitude: p.latitude })),
+        color: '#cccccc',
+        width: 3,
+        dottedLine: true
+      },
+      {
+        points: walkedPoints,
+        color: '#07c160',
+        width: 5,
+        dottedLine: false
+      }
+    ]
+
+    // 移动设备标记（id=3）
+    const newMarkers = [
+      trajectoryMarkers.value[0],
+      trajectoryMarkers.value[1],
+      {
+        id: 3,
+        longitude: current.longitude,
+        latitude: current.latitude,
+        width: 28,
+        height: 28,
+        callout: { content: '🚶', fontSize: 16, borderRadius: 50, bgColor: '#07c160', padding: 4, display: 'ALWAYS' }
+      }
+    ]
+    trajectoryMarkers.value = newMarkers
+  }, interval)
 }
+
 </script>
 
 <style lang="scss" scoped>
@@ -712,14 +865,14 @@ const onDateConfirm = (e) => {
 }
 
 .trajectory-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
   gap: 24rpx;
   background: #ffffff;
   border-radius: 24rpx;
   padding: 32rpx;
 
   .stat-item {
+    flex: 1;
     text-align: center;
 
     .stat-label {

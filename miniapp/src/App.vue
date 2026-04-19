@@ -1,7 +1,5 @@
 <template>
-  <view>
-    <router-view />
-  </view>
+  <view></view>
 </template>
 
 <script setup>
@@ -23,6 +21,7 @@ onHide(() => {
 <style lang="scss">
 @import 'uview-plus/theme.scss';
 @import 'uview-plus/index.scss';
+@import './static/font_5163035_73o8ucu6bq/iconfont.css';
 
 page {
   background-color: #f7f8fa;

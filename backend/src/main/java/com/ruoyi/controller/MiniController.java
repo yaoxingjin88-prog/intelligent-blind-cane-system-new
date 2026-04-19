@@ -2,13 +2,19 @@ package com.ruoyi.controller;
 
 import com.ruoyi.entity.AlarmRecord;
 import com.ruoyi.entity.CaneDevice;
+import com.ruoyi.entity.ElectronicFence;
 import com.ruoyi.entity.Feedback;
 import com.ruoyi.entity.Guardian;
 import com.ruoyi.entity.Result;
+import com.ruoyi.entity.SensorData;
 import com.ruoyi.service.AlarmRecordService;
 import com.ruoyi.service.CaneDeviceService;
+import com.ruoyi.service.ElectronicFenceService;
 import com.ruoyi.service.FeedbackService;
 import com.ruoyi.service.GuardianService;
+import com.ruoyi.service.SensorDataService;
+import com.ruoyi.mapper.ElectronicFenceMapper;
+import com.ruoyi.mapper.SensorDataMapper;
 import com.ruoyi.utils.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,6 +43,15 @@ public class MiniController {
 
     @Autowired
     private FeedbackService feedbackService;
+
+    @Autowired
+    private ElectronicFenceService electronicFenceService;
+
+    @Autowired
+    private ElectronicFenceMapper electronicFenceMapper;
+
+    @Autowired
+    private SensorDataMapper sensorDataMapper;
 
     @Autowired
     private JwtUtil jwtUtil;
@@ -214,55 +229,64 @@ public class MiniController {
         }
     }
 
-    @Operation(summary = "获取设备位置", description = "获取设备实时位置")
+    @Operation(summary = "获取设备位置", description = "获取设备实时位置（从sensor_data表读取最新GPS）")
     @GetMapping("/devices/{id}/location")
     public Result getDeviceLocation(@PathVariable String id) {
         try {
-            // 暂时返回固定位置，后续从传感器数据表获取
-            java.util.Random random = new java.util.Random();
             Map<String, Object> location = new HashMap<>();
             location.put("deviceId", id);
-            location.put("latitude", 39.9042 + (random.nextDouble() - 0.5) * 0.01);
-            location.put("longitude", 116.4074 + (random.nextDouble() - 0.5) * 0.01);
-            location.put("address", "北京市东城区东长安街");
-            location.put("updateTime", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
+
+            // 从 sensor_data 表读取该设备最新一条有 GPS 的记录
+            SensorData latest = sensorDataMapper.getLatestByDeviceId(id);
+            if (latest != null && latest.getLatitude() != null && latest.getLongitude() != null) {
+                location.put("latitude", latest.getLatitude());
+                location.put("longitude", latest.getLongitude());
+                location.put("updateTime", latest.getDataTime() != null ? latest.getDataTime() : latest.getCreateTime());
+            } else {
+                // 没有传感器数据时返回默认位置
+                location.put("latitude", 39.9042);
+                location.put("longitude", 116.4074);
+                location.put("updateTime", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
+            }
+            location.put("address", "");
             return Result.success(location);
         } catch (Exception e) {
             return Result.error("获取设备位置失败");
         }
     }
 
-    @Operation(summary = "获取传感器数据", description = "获取设备传感器数据")
+    @Operation(summary = "获取传感器数据", description = "获取设备传感器数据（从sensor_data表读取）")
     @GetMapping("/devices/{deviceId}/sensor-data")
     public Result getSensorData(@PathVariable String deviceId) {
         try {
-            // 模拟传感器数据（后续从传感器数据表获取）
-            java.util.Random random = new java.util.Random();
             Map<String, Object> data = new HashMap<>();
             data.put("deviceId", deviceId);
-            // 障碍物距离 (cm)
-            data.put("obstacleDistance", Math.round((80 + random.nextDouble() * 120) * 10) / 10.0);
-            // 是否跌倒
-            data.put("isFall", false);
-            // 温度 (°C)
-            data.put("temperature", Math.round((22 + random.nextDouble() * 8) * 10) / 10.0);
-            // 湿度 (%)
-            data.put("humidity", Math.round((40 + random.nextDouble() * 30) * 10) / 10.0);
-            // 电池电量 (%)
-            data.put("battery", 60 + random.nextInt(40));
-            // 信号强度
-            data.put("signal", 3 + random.nextInt(3));
-            // 心率 (bpm)
-            data.put("heartRate", 65 + random.nextInt(25));
-            // 步数
-            data.put("stepCount", 3000 + random.nextInt(5000));
-            // GPS位置
-            data.put("latitude", 39.9042 + (random.nextDouble() - 0.5) * 0.01);
-            data.put("longitude", 116.4074 + (random.nextDouble() - 0.5) * 0.01);
-            // 在线状态
-            data.put("online", true);
-            // 更新时间
-            data.put("updateTime", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
+
+            SensorData latest = sensorDataMapper.getLatestByDeviceId(deviceId);
+            if (latest != null) {
+                data.put("obstacleDistance", latest.getObstacleDistance() != null ? latest.getObstacleDistance() : 0);
+                data.put("isFall", latest.getIsFall() != null ? latest.getIsFall() : false);
+                data.put("temperature", latest.getTemperature() != null ? latest.getTemperature() : 0);
+                data.put("humidity", latest.getHumidity() != null ? latest.getHumidity() : 0);
+                data.put("latitude", latest.getLatitude());
+                data.put("longitude", latest.getLongitude());
+                data.put("accelX", latest.getAccelX());
+                data.put("accelY", latest.getAccelY());
+                data.put("accelZ", latest.getAccelZ());
+                data.put("fallConfidence", latest.getFallConfidence());
+                data.put("updateTime", latest.getDataTime() != null ? latest.getDataTime() : latest.getCreateTime());
+                // 根据已有数据计算步数（简单估算：用总记录数 * 步幅系数）
+                List<SensorData> todayData = sensorDataMapper.getTrajectory(deviceId, 24);
+                data.put("stepCount", todayData != null ? todayData.size() * 150 : 0);
+            } else {
+                data.put("obstacleDistance", 0);
+                data.put("isFall", false);
+                data.put("temperature", 0);
+                data.put("humidity", 0);
+                data.put("stepCount", 0);
+                data.put("updateTime", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
+            }
+            data.put("online", latest != null);
             return Result.success(data);
         } catch (Exception e) {
             return Result.error("获取传感器数据失败");
@@ -368,5 +392,337 @@ public class MiniController {
         } catch (Exception e) {
             return Result.error("标记消息已读失败");
         }
+    }
+
+    // ==================== 设备绑定 ====================
+
+    @Operation(summary = "绑定设备", description = "通过设备ID绑定设备")
+    @PostMapping("/devices/bind")
+    public Result bindDevice(@RequestBody Map<String, String> params, @RequestHeader(value = "Authorization", required = false) String token) {
+        try {
+            String deviceId = params.get("deviceId");
+            String deviceName = params.get("deviceName");
+            if (deviceId == null || deviceId.trim().isEmpty()) {
+                return Result.error("设备ID不能为空");
+            }
+
+            // 获取当前用户
+            Long userId = null;
+            if (token != null && !token.trim().isEmpty()) {
+                String cleanToken = token.replace("Bearer", "").trim();
+                String userIdStr = jwtUtil.getUsernameFromToken(cleanToken);
+                Guardian guardian = guardianService.getGuardianById(Long.parseLong(userIdStr));
+                if (guardian != null && guardian.getUserId() != null) {
+                    userId = guardian.getUserId();
+                }
+            }
+
+            // 创建设备
+            CaneDevice device = new CaneDevice();
+            device.setDeviceId(deviceId.trim());
+            device.setDeviceName(deviceName != null ? deviceName.trim() : "智能盲杖");
+            device.setUserId(userId != null ? userId : 1L);
+            device.setBatteryLevel(100);
+            device.setStatus("在线");
+            caneDeviceService.addDevice(device);
+
+            return Result.success(device);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("绑定设备失败: " + e.getMessage());
+        }
+    }
+
+    // ==================== 电子围栏 ====================
+
+    @Operation(summary = "获取围栏列表", description = "根据设备ID获取围栏列表")
+    @GetMapping("/fences")
+    public Result getFenceList(@RequestParam(required = false) String deviceId) {
+        try {
+            List<ElectronicFence> fences;
+            if (deviceId != null && !deviceId.trim().isEmpty()) {
+                fences = electronicFenceMapper.getListByDeviceId(deviceId);
+            } else {
+                fences = electronicFenceService.getAll();
+            }
+
+            // 转换为前端需要的格式
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (ElectronicFence fence : fences) {
+                Map<String, Object> item = new HashMap<>();
+                item.put("id", fence.getId());
+                item.put("name", fence.getFenceName());
+                item.put("type", "circle");
+                item.put("radius", fence.getRadiusMeters() != null ? fence.getRadiusMeters().intValue() : 300);
+                item.put("isAlarmEnabled", Boolean.TRUE.equals(fence.getEnabled()));
+                item.put("status", Boolean.TRUE.equals(fence.getEnabled()) ? "active" : "inactive");
+                Map<String, Object> center = new HashMap<>();
+                center.put("longitude", fence.getCenterLongitude() != null ? fence.getCenterLongitude() : 116.4074);
+                center.put("latitude", fence.getCenterLatitude() != null ? fence.getCenterLatitude() : 39.9042);
+                item.put("center", center);
+                item.put("deviceId", fence.getDeviceId());
+                result.add(item);
+            }
+            return Result.success(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("获取围栏列表失败");
+        }
+    }
+
+    @Operation(summary = "创建围栏", description = "创建电子围栏")
+    @PostMapping("/fences")
+    public Result createFence(@RequestBody Map<String, Object> params) {
+        try {
+            ElectronicFence fence = new ElectronicFence();
+            fence.setFenceName((String) params.get("name"));
+            fence.setDeviceId((String) params.get("deviceId"));
+            fence.setEnabled(true);
+            fence.setLastStatus("INSIDE");
+
+            // 解析半径
+            Object radiusObj = params.get("radius");
+            if (radiusObj instanceof Number) {
+                fence.setRadiusMeters(((Number) radiusObj).doubleValue());
+            } else {
+                fence.setRadiusMeters(500.0);
+            }
+
+            // 解析中心坐标
+            Object centerObj = params.get("center");
+            if (centerObj instanceof Map) {
+                Map<String, Object> center = (Map<String, Object>) centerObj;
+                Object lng = center.get("longitude");
+                Object lat = center.get("latitude");
+                if (lng instanceof Number) fence.setCenterLongitude(((Number) lng).doubleValue());
+                if (lat instanceof Number) fence.setCenterLatitude(((Number) lat).doubleValue());
+            }
+
+            electronicFenceMapper.insert(fence);
+
+            // 返回前端需要的格式
+            Map<String, Object> result = new HashMap<>();
+            result.put("id", fence.getId());
+            result.put("name", fence.getFenceName());
+            result.put("type", "circle");
+            result.put("radius", fence.getRadiusMeters() != null ? fence.getRadiusMeters().intValue() : 500);
+            result.put("isAlarmEnabled", true);
+            result.put("status", "active");
+            Map<String, Object> center = new HashMap<>();
+            center.put("longitude", fence.getCenterLongitude());
+            center.put("latitude", fence.getCenterLatitude());
+            result.put("center", center);
+
+            return Result.success(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("创建围栏失败: " + e.getMessage());
+        }
+    }
+
+    @Operation(summary = "更新围栏", description = "更新电子围栏")
+    @PutMapping("/fences/{id}")
+    public Result updateFence(@PathVariable Long id, @RequestBody Map<String, Object> params) {
+        try {
+            ElectronicFence fence = electronicFenceMapper.getById(id);
+            if (fence == null) {
+                return Result.error("围栏不存在");
+            }
+
+            if (params.containsKey("name")) {
+                fence.setFenceName((String) params.get("name"));
+            }
+            if (params.containsKey("isAlarmEnabled")) {
+                fence.setEnabled((Boolean) params.get("isAlarmEnabled"));
+            }
+            if (params.containsKey("radius")) {
+                Object radiusObj = params.get("radius");
+                if (radiusObj instanceof Number) {
+                    fence.setRadiusMeters(((Number) radiusObj).doubleValue());
+                }
+            }
+
+            electronicFenceMapper.update(fence);
+            return Result.success();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("更新围栏失败");
+        }
+    }
+
+    @Operation(summary = "删除围栏", description = "删除电子围栏")
+    @DeleteMapping("/fences/{id}")
+    public Result deleteFence(@PathVariable Long id) {
+        try {
+            electronicFenceMapper.deleteById(id);
+            return Result.success();
+        } catch (Exception e) {
+            return Result.error("删除围栏失败");
+        }
+    }
+
+    @Operation(summary = "获取围栏状态", description = "获取围栏状态")
+    @GetMapping("/fences/{id}/status")
+    public Result getFenceStatus(@PathVariable Long id) {
+        try {
+            ElectronicFence fence = electronicFenceMapper.getById(id);
+            if (fence == null) {
+                return Result.error("围栏不存在");
+            }
+            Map<String, Object> status = new HashMap<>();
+            status.put("id", fence.getId());
+            status.put("enabled", fence.getEnabled());
+            status.put("lastStatus", fence.getLastStatus());
+            return Result.success(status);
+        } catch (Exception e) {
+            return Result.error("获取围栏状态失败");
+        }
+    }
+
+    // ==================== 轨迹 ====================
+
+    @Operation(summary = "获取轨迹数据", description = "根据时间范围获取设备轨迹")
+    @GetMapping("/devices/{deviceId}/trajectory")
+    public Result getTrajectory(@PathVariable String deviceId,
+                                @RequestParam(required = false) String startTime,
+                                @RequestParam(required = false) String endTime) {
+        try {
+            List<SensorData> points;
+            if (startTime != null && endTime != null) {
+                points = sensorDataMapper.getTrajectoryByTimeRange(deviceId, startTime, endTime);
+            } else {
+                // 默认获取最近24小时
+                points = sensorDataMapper.getTrajectory(deviceId, 24);
+            }
+
+            // 转换为前端需要的格式 [{latitude, longitude, time}]
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (SensorData point : points) {
+                if (point.getLatitude() != null && point.getLongitude() != null) {
+                    Map<String, Object> item = new HashMap<>();
+                    item.put("latitude", point.getLatitude());
+                    item.put("longitude", point.getLongitude());
+                    item.put("time", point.getDataTime() != null ? point.getDataTime() : point.getCreateTime());
+                    result.add(item);
+                }
+            }
+
+            return Result.success(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("获取轨迹失败");
+        }
+    }
+
+    @Operation(summary = "获取轨迹统计", description = "获取设备轨迹统计数据")
+    @GetMapping("/devices/{deviceId}/statistics")
+    public Result getTrajectoryStatistics(@PathVariable String deviceId,
+                                          @RequestParam(required = false) String startTime,
+                                          @RequestParam(required = false) String endTime) {
+        try {
+            List<SensorData> points;
+            if (startTime != null && endTime != null) {
+                points = sensorDataMapper.getTrajectoryByTimeRange(deviceId, startTime, endTime);
+            } else {
+                points = sensorDataMapper.getTrajectory(deviceId, 24);
+            }
+
+            // 计算统计数据
+            double totalDistance = 0;
+            long totalDuration = 0;
+            if (points.size() >= 2) {
+                for (int i = 1; i < points.size(); i++) {
+                    SensorData prev = points.get(i - 1);
+                    SensorData curr = points.get(i);
+                    if (prev.getLatitude() != null && prev.getLongitude() != null
+                            && curr.getLatitude() != null && curr.getLongitude() != null) {
+                        totalDistance += calculateDistance(
+                                prev.getLatitude(), prev.getLongitude(),
+                                curr.getLatitude(), curr.getLongitude());
+                    }
+                }
+                // 粗算持续时间（秒）
+                totalDuration = points.size() * 30L; // 假设每个点间隔30秒
+            }
+
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("totalDistance", Math.round(totalDistance));
+            stats.put("duration", totalDuration);
+            stats.put("avgSpeed", totalDuration > 0 ? Math.round(totalDistance / totalDuration * 36) / 10.0 : 0);
+            stats.put("pointCount", points.size());
+            return Result.success(stats);
+        } catch (Exception e) {
+            return Result.error("获取轨迹统计失败");
+        }
+    }
+
+    // ==================== 模拟移动 ====================
+
+    @Operation(summary = "模拟设备移动", description = "生成模拟轨迹数据，用于演示和测试")
+    @PostMapping("/devices/{deviceId}/simulate")
+    public Result simulateMovement(@PathVariable String deviceId,
+                                   @RequestParam(defaultValue = "39.9042") double startLat,
+                                   @RequestParam(defaultValue = "116.4074") double startLng,
+                                   @RequestParam(defaultValue = "20") int points) {
+        try {
+            java.util.Random random = new java.util.Random();
+            double lat = startLat;
+            double lng = startLng;
+            java.time.LocalDateTime time = java.time.LocalDateTime.now().minusMinutes(points);
+            java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+            List<Map<String, Object>> trajectory = new ArrayList<>();
+
+            for (int i = 0; i < points; i++) {
+                // 模拟步行：每步约10-30米
+                lat += (random.nextDouble() - 0.3) * 0.0003;
+                lng += (random.nextDouble() - 0.3) * 0.0003;
+
+                SensorData data = new SensorData();
+                data.setDeviceId(deviceId);
+                data.setLatitude(lat);
+                data.setLongitude(lng);
+                data.setObstacleDistance(50 + random.nextDouble() * 200);
+                data.setIsFall(false);
+                data.setAccelX(random.nextDouble() * 2 - 1);
+                data.setAccelY(random.nextDouble() * 2 - 1);
+                data.setAccelZ(9.8 + random.nextDouble() * 0.5);
+                data.setFallConfidence(random.nextDouble() * 0.1);
+                data.setTemperature(20 + random.nextDouble() * 5);
+                data.setHumidity(40 + random.nextDouble() * 20);
+                data.setDataTime(time.format(fmt));
+
+                sensorDataMapper.insert(data);
+
+                Map<String, Object> point = new HashMap<>();
+                point.put("latitude", lat);
+                point.put("longitude", lng);
+                point.put("time", time.format(fmt));
+                trajectory.add(point);
+
+                time = time.plusMinutes(1);
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("count", points);
+            result.put("trajectory", trajectory);
+            return Result.success(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("模拟移动失败: " + e.getMessage());
+        }
+    }
+
+    private double calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+        double earthRadius = 6371000.0;
+        double latRad1 = Math.toRadians(lat1);
+        double latRad2 = Math.toRadians(lat2);
+        double deltaLat = Math.toRadians(lat2 - lat1);
+        double deltaLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2)
+                + Math.cos(latRad1) * Math.cos(latRad2)
+                * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return earthRadius * c;
     }
 }

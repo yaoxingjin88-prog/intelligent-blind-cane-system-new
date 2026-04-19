@@ -199,11 +199,13 @@ const submitFeedbackData = async () => {
 }
 
 .type-list {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 16rpx;
 
   .type-item {
+    width: calc(50% - 8rpx);
+    box-sizing: border-box;
     display: flex;
     justify-content: space-between;
     align-items: center;

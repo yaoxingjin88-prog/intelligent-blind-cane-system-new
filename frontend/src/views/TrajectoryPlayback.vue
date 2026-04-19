@@ -32,6 +32,23 @@
         </el-select>
         <el-button type="primary" @click="loadTrajectory">查询轨迹</el-button>
       </div>
+      <div v-if="trajectoryPath.length" class="playback-toolbar">
+        <div class="playback-actions">
+          <el-button type="primary" @click="togglePlayback">{{ isPlaying ? '暂停回放' : '开始回放' }}</el-button>
+          <el-button @click="replayPlayback">重新播放</el-button>
+          <el-select v-model="playbackSpeed" class="speed-select">
+            <el-option label="慢速" :value="1800" />
+            <el-option label="标准" :value="1200" />
+            <el-option label="快速" :value="700" />
+            <el-option label="极速" :value="350" />
+          </el-select>
+        </div>
+        <div class="playback-slider">
+          <span class="playback-label">回放进度</span>
+          <el-slider v-model="currentPlaybackIndex" :min="0" :max="Math.max(trajectoryPath.length - 1, 0)" :show-tooltip="false" />
+          <span class="playback-meta">{{ currentPlaybackIndex + 1 }} / {{ trajectoryPath.length }}</span>
+        </div>
+      </div>
     </el-card>
 
     <div class="stats-grid">
@@ -48,9 +65,12 @@
           <div class="card-header">
             <div>
               <span>轨迹地图</span>
-              <p class="header-subtitle">地图会展示起点、终点与完整轨迹折线</p>
+              <p class="header-subtitle">地图会展示起点、终点、回放点与完整轨迹折线</p>
             </div>
-            <el-tag type="primary" effect="plain">{{ trajectory.length }} 个定位点</el-tag>
+            <div class="map-header-tags">
+              <el-tag type="primary" effect="plain">{{ trajectoryPath.length }} 个定位点</el-tag>
+              <el-tag v-if="activePoint" type="success" effect="light">当前：{{ activePoint.createTime || '-' }}</el-tag>
+            </div>
           </div>
         </template>
         <div ref="mapContainerRef" class="map-container"></div>
@@ -66,7 +86,13 @@
           </div>
         </template>
         <div class="point-list">
-          <div v-for="point in visiblePoints" :key="point.id || point.createTime" class="point-item" @click="focusPoint(point)">
+          <div
+            v-for="point in visiblePoints"
+            :key="point.id || point.createTime"
+            class="point-item"
+            :class="{ 'point-item--active': isActivePoint(point) }"
+            @click="focusPoint(point)"
+          >
             <strong>{{ point.createTime || '-' }}</strong>
             <span>{{ formatCoordinate(point.longitude, point.latitude) }}</span>
             <span>障碍距离 {{ point.obstacleDistance ?? '-' }} cm</span>
@@ -82,7 +108,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
@@ -94,28 +120,49 @@ const selectedDeviceId = ref(route.query.deviceId ? String(route.query.deviceId)
 const selectedHours = ref(1)
 const trajectory = ref([])
 const playbackVisible = ref(true)
+const playbackSpeed = ref(1200)
+const currentPlaybackIndex = ref(0)
+const isPlaying = ref(false)
 
 let map = null
 let markers = []
 let polyline = null
+let playedPolyline = null
+let playbackMarker = null
+let playbackTimer = null
+
+const trajectoryPath = computed(() => trajectory.value.filter(item => item.longitude != null && item.latitude != null))
+const activePoint = computed(() => trajectoryPath.value[currentPlaybackIndex.value] || null)
 
 const statCards = computed(() => {
-  const start = trajectory.value[0]
-  const end = trajectory.value[trajectory.value.length - 1]
+  const start = trajectoryPath.value[0]
+  const end = trajectoryPath.value[trajectoryPath.value.length - 1]
   const fallCount = trajectory.value.filter(item => item.isFall).length
   return [
-    { label: '轨迹点数', value: trajectory.value.length, sub: '当前时间范围内的位置采样数' },
+    { label: '轨迹点数', value: trajectoryPath.value.length, sub: '当前时间范围内的位置采样数' },
     { label: '起点时间', value: start?.createTime || '-', sub: '轨迹第一条记录时间' },
     { label: '终点时间', value: end?.createTime || '-', sub: '轨迹最后一条记录时间' },
     { label: '异常节点', value: fallCount, sub: '跌倒识别节点数量' }
   ]
 })
 
-const visiblePoints = computed(() => [...trajectory.value].slice().reverse().slice(0, 40))
+const visiblePoints = computed(() => [...trajectoryPath.value].slice().reverse().slice(0, 40))
 
 const formatCoordinate = (lng, lat) => {
   if (lng == null || lat == null) return '-'
   return `${Number(lng).toFixed(5)}, ${Number(lat).toFixed(5)}`
+}
+
+const clearPlaybackTimer = () => {
+  if (playbackTimer) {
+    window.clearInterval(playbackTimer)
+    playbackTimer = null
+  }
+}
+
+const pausePlayback = () => {
+  isPlaying.value = false
+  clearPlaybackTimer()
 }
 
 const clearMapOverlays = () => {
@@ -128,16 +175,78 @@ const clearMapOverlays = () => {
     map.remove(polyline)
     polyline = null
   }
+  if (playedPolyline) {
+    map.remove(playedPolyline)
+    playedPolyline = null
+  }
+  if (playbackMarker) {
+    map.remove(playbackMarker)
+    playbackMarker = null
+  }
+}
+
+const updatePlaybackOverlay = (centerMap = false) => {
+  if (!map || !window.AMap || !playbackVisible.value || !trajectoryPath.value.length) return
+  const point = activePoint.value || trajectoryPath.value[0]
+  if (!point) return
+  const position = [Number(point.longitude), Number(point.latitude)]
+
+  if (!playedPolyline) {
+    playedPolyline = new window.AMap.Polyline({
+      path: [],
+      strokeColor: '#22c55e',
+      strokeWeight: 6,
+      strokeOpacity: 0.95,
+      zIndex: 30
+    })
+    map.add(playedPolyline)
+  }
+
+  playedPolyline.setPath(
+    trajectoryPath.value
+      .slice(0, currentPlaybackIndex.value + 1)
+      .map(item => [Number(item.longitude), Number(item.latitude)])
+  )
+
+  if (!playbackMarker) {
+    playbackMarker = new window.AMap.Marker({
+      position,
+      offset: new window.AMap.Pixel(-12, -12),
+      content: '<div class="trajectory-playback-marker"></div>'
+    })
+    map.add(playbackMarker)
+  } else {
+    playbackMarker.setPosition(position)
+  }
+
+  playbackMarker.setLabel({
+    content: point.createTime || '当前点',
+    offset: new window.AMap.Pixel(0, -26)
+  })
+
+  if (centerMap || isPlaying.value) {
+    map.setCenter(position)
+  }
+}
+
+const restartPlaybackTimer = () => {
+  clearPlaybackTimer()
+  if (!isPlaying.value || trajectoryPath.value.length <= 1) return
+  playbackTimer = window.setInterval(() => {
+    if (currentPlaybackIndex.value >= trajectoryPath.value.length - 1) {
+      pausePlayback()
+      return
+    }
+    currentPlaybackIndex.value += 1
+  }, playbackSpeed.value)
 }
 
 const renderTrajectory = () => {
   if (!map || !window.AMap) return
   clearMapOverlays()
-  if (!playbackVisible.value || !trajectory.value.length) return
+  if (!playbackVisible.value || !trajectoryPath.value.length) return
 
-  const path = trajectory.value
-    .filter(item => item.longitude != null && item.latitude != null)
-    .map(item => [Number(item.longitude), Number(item.latitude)])
+  const path = trajectoryPath.value.map(item => [Number(item.longitude), Number(item.latitude)])
 
   if (!path.length) return
 
@@ -161,6 +270,7 @@ const renderTrajectory = () => {
   markers = [startMarker, endMarker]
   map.add(markers)
   map.setFitView([polyline, ...markers], false, [60, 60, 60, 60])
+  updatePlaybackOverlay(true)
 }
 
 const initMap = () => {
@@ -195,6 +305,7 @@ const loadTrajectory = async () => {
     return
   }
   try {
+    pausePlayback()
     const response = await axios.get('/api/sensor-data/trajectory', {
       params: {
         deviceId: selectedDeviceId.value,
@@ -204,6 +315,7 @@ const loadTrajectory = async () => {
     })
     if (response.data.code === 200) {
       trajectory.value = response.data.data || []
+      currentPlaybackIndex.value = 0
       renderTrajectory()
     }
   } catch (error) {
@@ -212,14 +324,59 @@ const loadTrajectory = async () => {
   }
 }
 
+const togglePlayback = () => {
+  if (!trajectoryPath.value.length) {
+    ElMessage.warning('请先加载轨迹数据')
+    return
+  }
+  if (currentPlaybackIndex.value >= trajectoryPath.value.length - 1) {
+    currentPlaybackIndex.value = 0
+  }
+  isPlaying.value = !isPlaying.value
+  restartPlaybackTimer()
+}
+
+const replayPlayback = () => {
+  if (!trajectoryPath.value.length) {
+    ElMessage.warning('请先加载轨迹数据')
+    return
+  }
+  currentPlaybackIndex.value = 0
+  isPlaying.value = true
+  restartPlaybackTimer()
+}
+
+const isActivePoint = (point) => {
+  if (!activePoint.value) return false
+  return point.id
+    ? point.id === activePoint.value.id
+    : point.createTime === activePoint.value.createTime
+}
+
 const focusPoint = (point) => {
   if (!map || point.longitude == null || point.latitude == null) return
+  const index = trajectoryPath.value.findIndex(item => item.id ? item.id === point.id : item.createTime === point.createTime)
+  if (index >= 0) {
+    currentPlaybackIndex.value = index
+  }
+  pausePlayback()
   map.setCenter([Number(point.longitude), Number(point.latitude)])
   map.setZoom(16)
 }
 
 watch(playbackVisible, () => {
+  pausePlayback()
   renderTrajectory()
+})
+
+watch(currentPlaybackIndex, () => {
+  updatePlaybackOverlay(true)
+})
+
+watch(playbackSpeed, () => {
+  if (isPlaying.value) {
+    restartPlaybackTimer()
+  }
 })
 
 onMounted(async () => {
@@ -228,6 +385,10 @@ onMounted(async () => {
   if (selectedDeviceId.value) {
     loadTrajectory()
   }
+})
+
+onUnmounted(() => {
+  clearPlaybackTimer()
 })
 </script>
 
@@ -268,6 +429,12 @@ onMounted(async () => {
   gap: 12px;
 }
 
+.map-header-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .control-card,
 .panel,
 .stat-card {
@@ -289,6 +456,40 @@ onMounted(async () => {
 
 .control-item {
   width: 100%;
+}
+
+.playback-toolbar {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 20px;
+  align-items: center;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.playback-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.speed-select {
+  width: 120px;
+}
+
+.playback-slider {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.playback-label,
+.playback-meta {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
 }
 
 .stats-grid {
@@ -354,6 +555,12 @@ onMounted(async () => {
   background: #eff6ff;
 }
 
+.point-item--active {
+  border-color: #60a5fa;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+}
+
 .point-item strong {
   color: #0f172a;
 }
@@ -369,6 +576,10 @@ onMounted(async () => {
   }
 
   .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .playback-toolbar {
     grid-template-columns: 1fr;
   }
 }
@@ -391,11 +602,26 @@ onMounted(async () => {
     width: 100%;
   }
 
+  .playback-actions,
+  .playback-slider {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
   .map-container,
   .point-list {
     height: auto;
     max-height: none;
     min-height: 420px;
   }
+}
+
+:deep(.trajectory-playback-marker) {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2563eb 0%, #22c55e 100%);
+  border: 3px solid #ffffff;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
 }
 </style>

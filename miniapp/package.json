@@ -10,17 +10,18 @@
     "build:h5": "uni build -p h5"
   },
   "dependencies": {
-    "@dcloudio/uni-app": "^3.0.0-4020920240930001",
-    "@dcloudio/uni-mp-weixin": "^3.0.0-4020920240930001",
+    "@dcloudio/uni-app": "3.0.0-4020920240930001",
+    "@dcloudio/uni-mp-weixin": "3.0.0-4020920240930001",
     "pinia": "^2.1.7",
-    "uview-plus": "^3.2.0",
+    "sass": "^1.99.0",
+    "uview-plus": "^3.7.36",
     "vue": "^3.3.4"
   },
   "devDependencies": {
     "@dcloudio/types": "^3.4.8",
-    "@dcloudio/uni-automator": "^3.0.0-4020920240930001",
-    "@dcloudio/uni-cli-shared": "^3.0.0-4020920240930001",
-    "@dcloudio/vite-plugin-uni": "^3.0.0-4020920240930001",
+    "@dcloudio/uni-automator": "3.0.0-4020920240930001",
+    "@dcloudio/uni-cli-shared": "3.0.0-4020920240930001",
+    "@dcloudio/vite-plugin-uni": "3.0.0-4020920240930001",
     "vite": "^4.5.0"
   }
 }
