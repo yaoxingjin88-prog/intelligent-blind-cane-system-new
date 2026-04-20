@@ -261,10 +261,13 @@ export default {
       
       // 监听localStorage变化
       window.addEventListener('storage', checkLoginStatus)
+      // 监听告警变更事件，立即刷新铃铛
+      window.addEventListener('alarm-records-changed', fetchHeaderNotifications)
     })
 
     onUnmounted(() => {
       window.removeEventListener('storage', checkLoginStatus)
+      window.removeEventListener('alarm-records-changed', fetchHeaderNotifications)
       if (alarmPollTimer) {
         window.clearInterval(alarmPollTimer)
         alarmPollTimer = null

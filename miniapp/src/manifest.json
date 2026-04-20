@@ -41,7 +41,7 @@
     },
     "quickapp" : {},
     "mp-weixin" : {
-        "appid" : "wx990f82fa7b1de72e",
+        "appid" : "wxa6c01ce6be0713c7",
         "setting" : {
             "urlCheck" : false,
             "es6" : true,
@@ -52,6 +52,9 @@
         "permission" : {
             "scope.userLocation" : {
                 "desc" : "您的位置信息将用于小程序位置功能"
+            },
+            "scope.record" : {
+                "desc" : "用于语音对话功能，需要访问您的麦克风"
             }
         },
         "requiredPrivateInfos" : [ "getLocation", "chooseLocation" ]

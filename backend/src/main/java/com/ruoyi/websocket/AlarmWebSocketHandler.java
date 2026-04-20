@@ -98,6 +98,18 @@ public class AlarmWebSocketHandler extends TextWebSocketHandler {
         sendToDevice(deviceId, message);
     }
 
+    /**
+     * 盲杖按下 AI 按键：通知手机端跳转到 AI 对话页并开始录音
+     */
+    public void sendAiWake(String deviceId) {
+        Map<String, Object> message = new HashMap<>();
+        message.put("type", "AI_WAKE");
+        message.put("deviceId", deviceId);
+        message.put("message", "盲杖 AI 按键唤醒");
+        message.put("timestamp", System.currentTimeMillis());
+        sendToDevice(deviceId, message);
+    }
+
     public void sendFenceStatus(String deviceId, FenceEvaluationResult fenceEvaluationResult) {
         if (fenceEvaluationResult == null) {
             return;
@@ -145,10 +157,15 @@ public class AlarmWebSocketHandler extends TextWebSocketHandler {
         return null;
     }
 
+    /** 当前所有已连接的 deviceId，便于排查问题 */
+    public java.util.Set<String> getOnlineDeviceIds() {
+        return sessions.keySet();
+    }
+
     private void sendToDevice(String deviceId, Map<String, Object> message) {
         Map<String, WebSocketSession> deviceSessions = sessions.get(deviceId);
         if (deviceSessions == null || deviceSessions.isEmpty()) {
-            log.warn("设备未连接WebSocket: deviceId={}", deviceId);
+            log.warn("设备未连接WebSocket: deviceId={}, 当前在线设备={}", deviceId, sessions.keySet());
             return;
         }
         deviceSessions.values().forEach(session -> {

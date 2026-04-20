@@ -38,6 +38,20 @@
         </view>
       </view>
 
+      <!-- AI 助手入口 -->
+      <view class="menu-card ai-card" @click="navigateToAiChat">
+        <view class="menu-item">
+          <view class="menu-icon ai">
+            <text>🤖</text>
+          </view>
+          <view class="menu-content">
+            <text class="menu-title">明眼助手</text>
+            <text class="menu-desc">AI 语音问答，随时为您服务</text>
+          </view>
+          <text class="menu-arrow">›</text>
+        </view>
+      </view>
+
       <!-- 健康与活动统计 -->
       <view class="stats-card">
         <view class="stats-header">
@@ -200,6 +214,13 @@ const navigateToMessage = () => {
 const navigateToDevice = () => {
   uni.navigateTo({
     url: '/pages/device/device'
+  })
+}
+
+// 导航到 AI 对话
+const navigateToAiChat = () => {
+  uni.navigateTo({
+    url: '/pages/ai-chat/ai-chat'
   })
 }
 
@@ -431,6 +452,11 @@ const chooseAvatar = () => {
 
     &.device {
       background: #dbeafe;
+    }
+
+    &.ai {
+      background: linear-gradient(135deg, #07c160, #0ea678);
+      color: #ffffff;
     }
 
     &.elder {

@@ -121,7 +121,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Plus, Check, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 
@@ -267,6 +267,7 @@ export default {
         if (data.code === 200) {
           ElMessage.success('更新告警状态成功')
           fetchAlarmRecords()
+          window.dispatchEvent(new CustomEvent('alarm-records-changed'))
         } else {
           ElMessage.error('更新告警状态失败: ' + data.msg)
         }
@@ -291,6 +292,7 @@ export default {
           if (data.code === 200) {
             ElMessage.success('删除告警记录成功')
             fetchAlarmRecords()
+            window.dispatchEvent(new CustomEvent('alarm-records-changed'))
           } else {
             ElMessage.error('删除告警记录失败: ' + data.msg)
           }
@@ -312,8 +314,16 @@ export default {
       currentPage.value = current
     }
     
+    let alarmPageTimer = null
+    const onAlarmsChanged = () => fetchAlarmRecords()
     onMounted(() => {
       fetchAlarmRecords()
+      alarmPageTimer = window.setInterval(fetchAlarmRecords, 15000)
+      window.addEventListener('alarm-records-changed', onAlarmsChanged)
+    })
+    onUnmounted(() => {
+      if (alarmPageTimer) window.clearInterval(alarmPageTimer)
+      window.removeEventListener('alarm-records-changed', onAlarmsChanged)
     })
     
     return {

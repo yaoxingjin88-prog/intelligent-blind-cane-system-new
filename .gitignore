@@ -3,6 +3,8 @@ target/
 dist/
 build/
 out/
+unpackage/
+.hbuilderx/
 *.class
 *.jar
 *.war

@@ -104,6 +104,15 @@
         "navigationBarTitleText": "用户协议",
         "navigationStyle": "default"
       }
+    },
+    {
+      "path": "pages/ai-chat/ai-chat",
+      "style": {
+        "navigationBarTitleText": "明眼助手",
+        "navigationStyle": "default",
+        "navigationBarBackgroundColor": "#07c160",
+        "navigationBarTextStyle": "white"
+      }
     }
   ],
   "globalStyle": {

@@ -1,7 +1,7 @@
 // API 基础配置
-// 电脑IP地址: 192.168.254.1
+// 电脑IP地址: 10.117.163.214
 // 真机调试时，请确保手机与电脑连接到同一网络
-const BASE_URL = 'http://192.168.254.1:8081/api'
+export const BASE_URL = 'http://10.117.163.214:8081/api'
 
 // 请求拦截器
 const request = (options) => {
