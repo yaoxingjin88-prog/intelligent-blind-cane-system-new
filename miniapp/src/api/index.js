@@ -1,7 +1,7 @@
-// API 基础配置
-// 电脑IP地址: 192.168.122.214
-// 真机调试时，请确保手机与电脑连接到同一网络
-export const BASE_URL = 'http://192.168.122.214:8081/api'
+// API 基础配置（统一读取自 src/config/env.js）
+// 换 IP 只需运行 update-ip.ps1
+import { BASE_URL } from '@/config/env'
+export { BASE_URL }
 
 // 请求拦截器
 const request = (options) => {

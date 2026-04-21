@@ -17,15 +17,17 @@
           :setting="{ showScale: false, subKey: '' }"
           @markertap="onMarkerTap"
         >
-          <!-- 地图控制按钮 -->
-          <view class="map-controls-right">
-            <view class="control-btn" @click="navigateToFence">
-              <text class="icon">📍</text>
-            </view>
-            <view class="control-btn" @click="centerOnDevice">
-              <text class="icon">🎯</text>
-            </view>
-          </view>
+          <!-- 地图控制按钮（微信小程序 map 里必须用 cover-view 才能点击）-->
+          <cover-view class="map-controls-right">
+            <cover-view class="control-btn" @click="navigateToFence">
+              <cover-view class="icon">📍</cover-view>
+              <cover-view class="btn-label">围栏</cover-view>
+            </cover-view>
+            <cover-view class="control-btn" @click="centerOnDevice">
+              <cover-view class="icon">🎯</cover-view>
+              <cover-view class="btn-label">定位</cover-view>
+            </cover-view>
+          </cover-view>
         </map>
       </view>
 
@@ -79,6 +81,18 @@
         </view>
       </view>
 
+      <!-- AI 语音助手入口 -->
+      <view class="ai-entry" @click="navigateToAiChat">
+        <view class="ai-entry-left">
+          <view class="ai-icon">🎙</view>
+          <view class="ai-info">
+            <text class="ai-title">AI 语音助手</text>
+            <text class="ai-desc">遇到问题随时对我说话</text>
+          </view>
+        </view>
+        <text class="ai-arrow">›</text>
+      </view>
+
       <!-- 安全守护 -->
       <view class="safety-section">
         <text class="section-title">安全守护</text>
@@ -123,7 +137,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useUserStore, useDeviceStore, useAlarmStore } from '@/store'
 import { getTrajectory } from '@/api/trajectory'
 import { formatRelativeTime } from '@/utils'
@@ -256,12 +270,8 @@ const loadDeviceData = async () => {
         }
       }]
       
-      // 使用 MapContext 强制移动地图视图到设备位置
-      const mapCtx = uni.createMapContext('map')
-      mapCtx.moveToLocation({
-        longitude: loc.longitude,
-        latitude: loc.latitude
-      })
+      // longitude/latitude 已响应式绑定，map 会自动跟随，无需手动 moveToLocation
+      // （真机 Vue3 setup 里 createMapContext 拿不到组件实例，会报 mapview is null）
       
       // 加载最近1小时的轨迹线
       try {
@@ -381,11 +391,29 @@ const navigateToFence = () => {
   })
 }
 
-// 定位到设备
+// 定位到设备（盲杖红色图钉位置）
+const instance = getCurrentInstance()
 const centerOnDevice = () => {
-  if (deviceStore.deviceLocation) {
-    longitude.value = deviceStore.deviceLocation.longitude
-    latitude.value = deviceStore.deviceLocation.latitude
+  const loc = deviceStore.deviceLocation
+  if (!loc || !loc.longitude || !loc.latitude) {
+    uni.showToast({ title: '暂无设备位置数据', icon: 'none' })
+    return
+  }
+  // 同步更新响应式绑定
+  longitude.value = loc.longitude
+  latitude.value = loc.latitude
+  scale.value = 16
+
+  // 用 includePoints 强制地图视野包含设备位置点（比 moveToLocation 更可靠）
+  try {
+    const mapCtx = uni.createMapContext('map', instance)
+    mapCtx.includePoints({
+      points: [{ longitude: loc.longitude, latitude: loc.latitude }],
+      padding: [120, 120, 120, 120]
+    })
+    uni.showToast({ title: '已定位到设备', icon: 'success', duration: 1200 })
+  } catch (e) {
+    uni.showToast({ title: '已定位到设备', icon: 'success', duration: 1200 })
   }
 }
 
@@ -393,6 +421,13 @@ const centerOnDevice = () => {
 const navigateToAlarm = () => {
   uni.switchTab({
     url: '/pages/alarm/alarm'
+  })
+}
+
+// 跳转到 AI 语音助手
+const navigateToAiChat = () => {
+  uni.navigateTo({
+    url: '/pages/ai-chat/ai-chat'
   })
 }
 
@@ -480,24 +515,32 @@ const onMarkerTap = (e) => {
 
   .map-controls-right {
     position: absolute;
-    bottom: 24rpx;
+    top: 24rpx;
     right: 24rpx;
     display: flex;
     flex-direction: column;
     gap: 16rpx;
 
     .control-btn {
-      width: 72rpx;
-      height: 72rpx;
+      width: 96rpx;
+      height: 96rpx;
       background: rgba(255, 255, 255, 0.95);
-      border-radius: 50%;
+      border-radius: 16rpx;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.15);
 
       .icon {
         font-size: 32rpx;
+        line-height: 1;
+      }
+      .btn-label {
+        font-size: 20rpx;
+        color: #333;
+        margin-top: 4rpx;
+        line-height: 1;
       }
     }
   }
@@ -620,6 +663,68 @@ const onMarkerTap = (e) => {
         }
       }
     }
+  }
+}
+
+.ai-entry {
+  margin: 0 32rpx 24rpx;
+  padding: 28rpx 32rpx;
+  border-radius: 24rpx;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #ec4899 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 8rpx 20rpx rgba(99, 102, 241, 0.3);
+
+  .ai-entry-left {
+    display: flex;
+    align-items: center;
+    flex: 1;
+  }
+
+  .ai-icon {
+    width: 80rpx;
+    height: 80rpx;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40rpx;
+    margin-right: 24rpx;
+    flex-shrink: 0;
+  }
+
+  .ai-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+
+    .ai-title {
+      font-size: 30rpx;
+      font-weight: 600;
+      color: #ffffff;
+      line-height: 1.3;
+    }
+
+    .ai-desc {
+      font-size: 24rpx;
+      color: rgba(255, 255, 255, 0.85);
+      margin-top: 4rpx;
+      line-height: 1.3;
+    }
+  }
+
+  .ai-arrow {
+    font-size: 44rpx;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 300;
+    margin-left: 16rpx;
+  }
+
+  &:active {
+    opacity: 0.85;
+    transform: scale(0.98);
   }
 }
 

@@ -4,10 +4,7 @@
 
 <script setup>
 import { onLaunch, onShow, onHide } from '@dcloudio/uni-app'
-
-// ====== 后端地址（与 api/index.js 保持一致）======
-const BACKEND_HOST = '192.168.122.214:8081'
-const WS_URL = `ws://${BACKEND_HOST}/ws/alarm`
+import { WS_URL } from '@/config/env'
 
 // ====== 全局 WebSocket ======
 let socketTask = null
@@ -28,6 +25,7 @@ const connectWebSocket = () => {
   }
 
   const url = `${WS_URL}?deviceId=${encodeURIComponent(device.deviceId)}`
+  // WS_URL 例如 ws://192.168.x.x:8081/ws/alarm
   console.log('[WS] 连接:', url)
 
   socketTask = uni.connectSocket({
@@ -85,7 +83,7 @@ const handleWsMessage = (msg) => {
   switch (msg.type) {
     case 'AI_WAKE':
       // 盲杖按键唤醒：震动 + 跳转 AI 页 + 自动开始对话
-      try { uni.vibrateLong() } catch (e) {}
+      try { uni.vibrateLong({ fail: () => {} }) } catch (e) {}
       const app = getApp()
       if (app) {
         app.globalData = app.globalData || {}

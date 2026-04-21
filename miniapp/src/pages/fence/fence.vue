@@ -56,7 +56,47 @@
           :circles="fenceCircles"
           :polygons="fencePolygons"
           :markers="fenceMarkers"
+          :show-location="true"
         ></map>
+      </view>
+
+      <!-- 围栏状态卡片 -->
+      <view class="fence-status-card" :class="{ 'out-of-fence': !inSafeZone }">
+        <view class="status-row">
+          <text class="status-icon">{{ inSafeZone ? '✅' : '⚠️' }}</text>
+          <view class="status-info">
+            <text class="status-title">{{ inSafeZone ? '当前位置安全' : '已越出守护区域' }}</text>
+            <text class="status-sub">{{ statusSubtitle }}</text>
+          </view>
+        </view>
+        <view class="status-detail">
+          <view class="detail-item">
+            <text class="detail-label">📍 当前位置</text>
+            <text class="detail-value">{{ currentLocationText }}</text>
+          </view>
+          <view class="detail-item">
+            <text class="detail-label">🛡 最近围栏</text>
+            <text class="detail-value">{{ nearestFenceText }}</text>
+          </view>
+          <view class="detail-item">
+            <text class="detail-label">📏 相对距离</text>
+            <text class="detail-value">{{ distanceText }}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 最近越界记录 -->
+      <view class="recent-breach-section" v-if="recentBreaches.length > 0">
+        <text class="section-title">最近越界记录</text>
+        <view class="breach-list">
+          <view v-for="(item, idx) in recentBreaches" :key="idx" class="breach-item">
+            <text class="breach-icon">🚨</text>
+            <view class="breach-info">
+              <text class="breach-title">{{ item.title }}</text>
+              <text class="breach-time">{{ item.time }}</text>
+            </view>
+          </view>
+        </view>
       </view>
     </scroll-view>
 
@@ -185,7 +225,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { useDeviceStore } from '@/store'
+import { useDeviceStore, useAlarmStore } from '@/store'
 import { getFenceList, createFence as createFenceApi, updateFence } from '@/api/fence'
 import { getTrajectory, getTrajectoryStatistics } from '@/api/trajectory'
 import { formatDateTime, formatDistance } from '@/utils'
@@ -326,6 +366,82 @@ const fenceMarkers = computed(() => {
     })
   }
   return markers
+})
+
+// ===== 围栏状态计算（盲杖是否在守护区域内）=====
+// 两点距离（米），Haversine 公式
+const haversine = (lat1, lon1, lat2, lon2) => {
+  const toRad = (d) => (d * Math.PI) / 180
+  const R = 6371000
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// 最近的启用围栏（按到中心距离排序）
+const nearestFence = computed(() => {
+  const loc = deviceStore.deviceLocation
+  if (!loc || !fenceList.value.length) return null
+  const enabled = fenceList.value.filter(f => f.isAlarmEnabled && f.center)
+  if (!enabled.length) return null
+  let best = null
+  let bestDist = Infinity
+  for (const f of enabled) {
+    const d = haversine(loc.latitude, loc.longitude, f.center.latitude, f.center.longitude)
+    if (d < bestDist) {
+      bestDist = d
+      best = { fence: f, distance: d }
+    }
+  }
+  return best
+})
+
+// 是否在安全区内：到任一启用围栏中心距离 ≤ 半径
+const inSafeZone = computed(() => {
+  const loc = deviceStore.deviceLocation
+  if (!loc || !fenceList.value.length) return true
+  const enabled = fenceList.value.filter(f => f.isAlarmEnabled && f.center && f.type === 'circle')
+  if (!enabled.length) return true
+  return enabled.some(f => haversine(loc.latitude, loc.longitude, f.center.latitude, f.center.longitude) <= (f.radius || 0))
+})
+
+const statusSubtitle = computed(() => {
+  if (!deviceStore.deviceLocation) return '等待设备定位...'
+  if (!fenceList.value.length) return '尚未设置任何守护区域'
+  return inSafeZone.value ? '盲杖正在守护区域内' : '请关注盲人当前动态'
+})
+
+const currentLocationText = computed(() => {
+  const loc = deviceStore.deviceLocation
+  if (!loc || !loc.longitude) return '暂无位置数据'
+  return `${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}`
+})
+
+const nearestFenceText = computed(() => {
+  return nearestFence.value ? nearestFence.value.fence.name : '无启用中的围栏'
+})
+
+const distanceText = computed(() => {
+  if (!nearestFence.value) return '-'
+  const d = nearestFence.value.distance
+  const r = nearestFence.value.fence.radius || 0
+  const offset = d - r
+  if (offset <= 0) return `在围栏内（距中心 ${Math.round(d)} 米）`
+  return `超出边界 ${Math.round(offset)} 米`
+})
+
+// 最近越界记录（从报警记录里取围栏相关的）
+const alarmStore = useAlarmStore()
+const recentBreaches = computed(() => {
+  const list = alarmStore.alarmList || []
+  return list
+    .filter(a => (a.alarmType || '').includes('围栏'))
+    .slice(0, 3)
+    .map(a => ({
+      title: a.alarmType || '围栏越界',
+      time: a.alarmTime || ''
+    }))
 })
 
 // 轨迹相关
@@ -767,15 +883,129 @@ const runAnimation = () => {
 
 .fence-map-preview,
 .trajectory-map-container {
-  height: 400rpx;
+  height: 560rpx;
   border-radius: 24rpx;
   overflow: hidden;
   border: 1rpx solid #e5e7eb;
+  margin-bottom: 24rpx;
 
   .fence-map,
   .trajectory-map {
     width: 100%;
     height: 100%;
+  }
+}
+
+.fence-status-card {
+  background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%);
+  border: 1rpx solid #a7f3d0;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+
+  &.out-of-fence {
+    background: linear-gradient(135deg, #fef2f2 0%, #ffffff 100%);
+    border-color: #fecaca;
+  }
+
+  .status-row {
+    display: flex;
+    align-items: center;
+    padding-bottom: 24rpx;
+    border-bottom: 1rpx solid #f1f5f9;
+
+    .status-icon {
+      font-size: 56rpx;
+      margin-right: 20rpx;
+    }
+
+    .status-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+
+      .status-title {
+        font-size: 32rpx;
+        font-weight: 700;
+        color: #1f2937;
+      }
+
+      .status-sub {
+        font-size: 24rpx;
+        color: #6b7280;
+        margin-top: 6rpx;
+      }
+    }
+  }
+
+  .status-detail {
+    padding-top: 20rpx;
+
+    .detail-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12rpx 0;
+
+      .detail-label {
+        font-size: 26rpx;
+        color: #6b7280;
+      }
+
+      .detail-value {
+        font-size: 26rpx;
+        color: #1f2937;
+        font-weight: 500;
+      }
+    }
+  }
+}
+
+.recent-breach-section {
+  background: #ffffff;
+  border-radius: 24rpx;
+  padding: 24rpx 32rpx;
+  margin-bottom: 24rpx;
+
+  .section-title {
+    font-size: 28rpx;
+    font-weight: 600;
+    color: #1f2937;
+    display: block;
+    margin-bottom: 16rpx;
+  }
+
+  .breach-item {
+    display: flex;
+    align-items: center;
+    padding: 16rpx 0;
+    border-bottom: 1rpx solid #f3f4f6;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .breach-icon {
+      font-size: 32rpx;
+      margin-right: 16rpx;
+    }
+
+    .breach-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+
+      .breach-title {
+        font-size: 28rpx;
+        color: #1f2937;
+      }
+
+      .breach-time {
+        font-size: 22rpx;
+        color: #9ca3af;
+        margin-top: 4rpx;
+      }
+    }
   }
 }
 

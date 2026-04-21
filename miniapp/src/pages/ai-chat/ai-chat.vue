@@ -114,9 +114,9 @@
 
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { BASE_URL as AI_BASE_URL } from '@/config/env'
 
 // ===== AI 相关 API 内联（避免 WeChat devtools 模块缓存问题） =====
-const AI_BASE_URL = 'http://192.168.122.214:8081/api'
 
 const apiChat = (messages) => {
   const token = uni.getStorageSync('token')
@@ -298,11 +298,20 @@ const speak = (text) => {
   })
 }
 
-// 震动反馈
+// 震动反馈（兼容不支持 type 参数的设备）
 const vibrate = (long = false) => {
   try {
-    if (long) uni.vibrateLong()
-    else uni.vibrateShort({ type: 'medium' })
+    if (long) {
+      uni.vibrateLong({ fail: () => {} })
+    } else {
+      // 先尝试带 type，失败回落到无参数
+      uni.vibrateShort({
+        type: 'heavy',
+        fail: () => {
+          try { uni.vibrateShort({ fail: () => {} }) } catch (e) {}
+        }
+      })
+    }
   } catch (e) {}
 }
 
