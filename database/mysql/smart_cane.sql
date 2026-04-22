@@ -227,28 +227,31 @@ CREATE TABLE `visually_impaired_user`  (
   `username` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '用户名',
   `password` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '密码',
   `name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '姓名',
-  `phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '手机号',
-  `id_card` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '身份证号',
-  `address` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '地址',
+  `age` int NULL DEFAULT NULL COMMENT '年龄',
+  `gender` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '性别',
+  `blood_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '血型',
+  `phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '电话',
+  `id_card` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '身份证号',
+  `address` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '地址',
+  `emergency_contact` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '紧急联系人',
+  `emergency_phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '紧急联系电话',
+  `medical_history` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL COMMENT '病史与注意事项',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`) USING BTREE,
-  UNIQUE INDEX `phone`(`phone` ASC) USING BTREE,
-  UNIQUE INDEX `id_card`(`id_card` ASC) USING BTREE,
   UNIQUE INDEX `username`(`username` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 16 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '视力障碍用户表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 10 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '视力障碍用户表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Records of visually_impaired_user
 -- ----------------------------
-INSERT INTO `visually_impaired_user` VALUES (1, 'user1', '123456', '测试用户', '13900139000000', '110101199001011234', '北京市海淀区', '2026-04-11 09:44:41', '2026-04-12 22:52:48');
-INSERT INTO `visually_impaired_user` VALUES (2, 'zhangweiming', '123456', '张维明', '13811223344', '110102198506154321', '北京市西城区西长安街12号', '2026-04-11 12:34:44', '2026-04-13 16:50:30');
-INSERT INTO `visually_impaired_user` VALUES (3, 'liuhua', '123456', '刘华', '13788990011', '320104197809234567', '南京市玄武区中山路1号', '2026-04-11 13:51:11', '2026-04-11 13:51:11');
-INSERT INTO `visually_impaired_user` VALUES (4, 'wanghong', '123456', '王红', '13677889900', '420106198205123456', '武汉市武昌区珞喻路1037号', '2026-04-11 13:51:23', '2026-04-11 13:51:23');
-INSERT INTO `visually_impaired_user` VALUES (5, 'chenglin', '123456', '程林', '13566778899111', '350203198511304567', '厦门市思明区湖滨南路88号', '2026-04-11 13:51:29', '2026-04-12 00:46:05');
-INSERT INTO `visually_impaired_user` VALUES (9, '弱者', '123456', '王少', '13395316449', '', '山东潍坊', '2026-04-12 14:41:49', '2026-04-12 14:41:49');
-INSERT INTO `visually_impaired_user` VALUES (10, 'scs', 'sd', '闻所未闻', '166666666', '464661', '是的是的1', '2026-04-12 22:53:33', '2026-04-12 23:14:02');
-INSERT INTO `visually_impaired_user` VALUES (12, '放大', 'f', '的', '发顺丰', '发顺丰？？', '是否是1', '2026-04-12 23:06:47', '2026-04-13 00:20:10');
-INSERT INTO `visually_impaired_user` VALUES (15, '123', '333', '刚刚', '888', '555', '他依然', '2026-04-13 16:01:41', '2026-04-13 16:01:41');
+INSERT INTO `visually_impaired_user` VALUES (1, 'user1', '123456', '测试用户', 62, '男', 'A型', '13900139000', '110101199001011234', '北京市海淀区', '张三', '13800138000', '高血压，外出时需语音提醒', '2026-04-11 09:46:12');
+INSERT INTO `visually_impaired_user` VALUES (2, 'zhangweiming', '123456', '张明', 58, '男', 'O型', '13811223344', '110101198506154321', '北京市西城区', '李小明', '13988776655', '无', '2026-04-11 12:23:11');
+INSERT INTO `visually_impaired_user` VALUES (3, 'lihua', '123456', '刘华', 55, '女', 'B型', '13788990011', '320104197809234567', '南京市玄武区', '王建国', '13877665544', '糖尿病，需要规律提醒', '2026-04-11 13:44:25');
+INSERT INTO `visually_impaired_user` VALUES (4, 'wanghong', '123456', '王红', 60, '女', 'AB型', '13677889900', '420106198205123456', '武汉市江汉区', '程小丽', '13766554433', '行动较慢，需注意路口提醒', '2026-04-11 13:58:02');
+INSERT INTO `visually_impaired_user` VALUES (5, 'chenglin', '123456', '程林', 50, '男', 'A型', '13566778899', '350203198511304567', '厦门市思明区', '李小明', '13988776655', '无', '2026-04-11 13:51:29');
+INSERT INTO `visually_impaired_user` VALUES (9, '弱者', '123456', '王少', 40, '男', 'O型', '13395316449', '', '山东潍坊', '张三', '13800138000', '无', '2026-04-12 14:41:49');
+INSERT INTO `visually_impaired_user` VALUES (10, 'scs', 'sd', '闻所未闻', 30, '男', 'B型', '166666666', '464661', '是的是的1', '李小明', '13988776655', '无', '2026-04-12 22:53:33');
+INSERT INTO `visually_impaired_user` VALUES (12, '放大', 'f', '的', 20, '男', 'AB型', '发顺丰', '发顺丰？？', '是否是1', '王建国', '13877665544', '无', '2026-04-12 23:06:47');
+INSERT INTO `visually_impaired_user` VALUES (15, '123', '333', '刚刚', 10, '男', 'A型', '888', '555', '他依然', '程小丽', '13766554433', '无', '2026-04-13 16:01:41');
 
 SET FOREIGN_KEY_CHECKS = 1;

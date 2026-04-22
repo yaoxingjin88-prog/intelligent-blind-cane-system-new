@@ -6,15 +6,21 @@
       <view class="user-card">
         <view class="user-bg"></view>
         <view class="user-info">
-          <view class="avatar" @click="showAvatarPicker = true">
+          <view class="avatar" @click="chooseAvatar">
             <image v-if="userInfo && userInfo.avatar" :src="userInfo.avatar" mode="aspectFill" />
-            <text v-else class="avatar-placeholder">👤</text>
+            <view v-else class="avatar-placeholder">
+              <text class="avatar-initial">{{ avatarInitial }}</text>
+            </view>
+            <view class="avatar-edit-tag">
+              <text>更换头像</text>
+            </view>
           </view>
           <view class="user-details">
             <view class="user-name-row">
-              <text class="user-name">{{ (userInfo && userInfo.nickname) ? userInfo.nickname : '用户' }}</text>
+              <text class="user-name">{{ displayName }}</text>
               <text class="verified-badge" v-if="userInfo && userInfo.isVerified">已实名</text>
             </view>
+            <text class="user-role">家属监护账户</text>
             <text class="user-phone">{{ (userInfo && userInfo.phone) ? userInfo.phone : '未绑定手机' }}</text>
           </view>
           <view class="message-icon" @click="navigateToMessage">
@@ -88,9 +94,9 @@
       <view class="settings-card">
         <view class="menu-item" @click="navigateToSubpage('elder-info')">
           <view class="menu-icon elder">
-            <text>👴</text>
+            <text>🦯</text>
           </view>
-          <text class="menu-title">老人信息管理</text>
+          <text class="menu-title">盲人信息管理</text>
           <text class="menu-arrow">›</text>
         </view>
         <view class="menu-item" @click="navigateToSubpage('dnd-settings')">
@@ -129,6 +135,19 @@ const settingsStore = useSettingsStore()
 
 // 用户信息
 const userInfo = computed(() => userStore.userInfo)
+const displayName = computed(() => {
+  if (userInfo.value && userInfo.value.nickname) {
+    return userInfo.value.nickname
+  }
+  if (userInfo.value && userInfo.value.username) {
+    return userInfo.value.username
+  }
+  return '用户'
+})
+const avatarInitial = computed(() => {
+  const name = displayName.value || '用户'
+  return name.slice(0, 1)
+})
 
 // 设备数量
 const deviceCount = computed(() => deviceStore.deviceList.length)
@@ -160,9 +179,6 @@ const chartData = computed(() => {
     active: i === dayIndex
   }))
 })
-
-// 头像选择器
-const showAvatarPicker = ref(false)
 
 // 加载未读消息数量
 const loadUnreadCount = async () => {
@@ -335,13 +351,14 @@ const chooseAvatar = () => {
       width: 128rpx;
       height: 128rpx;
       border-radius: 50%;
-      background: #ffffff;
+      background: linear-gradient(135deg, #d9fbe7 0%, #9ae6b4 100%);
       border: 4rpx solid #ffffff;
       overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
       box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
+      position: relative;
 
       image {
         width: 100%;
@@ -349,7 +366,39 @@ const chooseAvatar = () => {
       }
 
       .avatar-placeholder {
-        font-size: 64rpx;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+
+        .avatar-initial {
+          font-size: 52rpx;
+          color: #ffffff;
+          font-weight: 700;
+        }
+      }
+
+      .avatar-edit-tag {
+        position: absolute;
+        left: 50%;
+        bottom: 0;
+        transform: translateX(-50%);
+        min-width: 88rpx;
+        height: 32rpx;
+        padding: 0 10rpx;
+        border-radius: 16rpx 16rpx 0 0;
+        background: rgba(17, 24, 39, 0.72);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        text {
+          font-size: 18rpx;
+          color: #ffffff;
+          line-height: 1;
+        }
       }
     }
 
@@ -381,6 +430,14 @@ const chooseAvatar = () => {
       .user-phone {
         font-size: 24rpx;
         color: #6b7280;
+      }
+
+      .user-role {
+        display: block;
+        margin-bottom: 8rpx;
+        font-size: 22rpx;
+        color: #059669;
+        font-weight: 600;
       }
     }
 

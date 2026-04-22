@@ -7,12 +7,14 @@ import com.ruoyi.entity.Feedback;
 import com.ruoyi.entity.Guardian;
 import com.ruoyi.entity.Result;
 import com.ruoyi.entity.SensorData;
+import com.ruoyi.entity.VisuallyImpairedUser;
 import com.ruoyi.service.AlarmRecordService;
 import com.ruoyi.service.CaneDeviceService;
 import com.ruoyi.service.ElectronicFenceService;
 import com.ruoyi.service.FeedbackService;
 import com.ruoyi.service.GuardianService;
 import com.ruoyi.service.SensorDataService;
+import com.ruoyi.service.VisuallyImpairedUserService;
 import com.ruoyi.mapper.ElectronicFenceMapper;
 import com.ruoyi.mapper.SensorDataMapper;
 import com.ruoyi.utils.JwtUtil;
@@ -55,6 +57,16 @@ public class MiniController {
 
     @Autowired
     private JwtUtil jwtUtil;
+
+    @Autowired
+    private VisuallyImpairedUserService visuallyImpairedUserService;
+
+    private String extractToken(String token) {
+        if (token == null) {
+            return null;
+        }
+        return token.replace("Bearer", "").trim();
+    }
 
     @Operation(summary = "小程序登录", description = "监护人通过手机号和验证码登录")
     @PostMapping("/login")
@@ -128,7 +140,7 @@ public class MiniController {
     @GetMapping("/user/info")
     public Result getUserInfo(@RequestHeader("Authorization") String token) {
         try {
-            String userId = jwtUtil.getUsernameFromToken(token);
+            String userId = jwtUtil.getUsernameFromToken(extractToken(token));
             Guardian guardian = guardianService.getGuardianById(Long.parseLong(userId));
             return Result.success(guardian);
         } catch (Exception e) {
@@ -140,12 +152,58 @@ public class MiniController {
     @PutMapping("/user/info")
     public Result updateUserInfo(@RequestBody Guardian guardian, @RequestHeader("Authorization") String token) {
         try {
-            String userId = jwtUtil.getUsernameFromToken(token);
+            String userId = jwtUtil.getUsernameFromToken(extractToken(token));
             guardian.setId(Long.parseLong(userId));
             guardianService.updateGuardian(guardian);
             return Result.success();
         } catch (Exception e) {
             return Result.error("更新用户信息失败");
+        }
+    }
+
+    @Operation(summary = "获取盲人档案", description = "获取当前监护人关联的盲人档案信息")
+    @GetMapping("/blind-profile")
+    public Result getBlindProfile(@RequestHeader("Authorization") String token) {
+        try {
+            String guardianId = jwtUtil.getUsernameFromToken(extractToken(token));
+            Guardian guardian = guardianService.getGuardianById(Long.parseLong(guardianId));
+            if (guardian == null || guardian.getUserId() == null) {
+                return Result.error("未找到关联的盲人档案");
+            }
+            VisuallyImpairedUser profile = visuallyImpairedUserService.getUserById(guardian.getUserId());
+            if (profile == null) {
+                return Result.error("未找到关联的盲人档案");
+            }
+            return Result.success(profile);
+        } catch (Exception e) {
+            return Result.error("获取盲人档案失败");
+        }
+    }
+
+    @Operation(summary = "保存盲人档案", description = "保存当前监护人关联的盲人档案信息")
+    @PutMapping("/blind-profile")
+    public Result saveBlindProfile(@RequestBody VisuallyImpairedUser profile, @RequestHeader("Authorization") String token) {
+        try {
+            String guardianId = jwtUtil.getUsernameFromToken(extractToken(token));
+            Guardian guardian = guardianService.getGuardianById(Long.parseLong(guardianId));
+            if (guardian == null || guardian.getUserId() == null) {
+                return Result.error("未找到关联的盲人档案");
+            }
+            VisuallyImpairedUser existingUser = visuallyImpairedUserService.getUserById(guardian.getUserId());
+            if (existingUser == null) {
+                return Result.error("未找到关联的盲人档案");
+            }
+            profile.setId(existingUser.getId());
+            profile.setUsername(existingUser.getUsername());
+            profile.setPassword(existingUser.getPassword());
+            profile.setIdCard(profile.getIdCard() == null || profile.getIdCard().trim().isEmpty() ? existingUser.getIdCard() : profile.getIdCard());
+            profile.setName(profile.getName() == null ? existingUser.getName() : profile.getName());
+            profile.setPhone(profile.getPhone() == null ? existingUser.getPhone() : profile.getPhone());
+            profile.setAddress(profile.getAddress() == null ? existingUser.getAddress() : profile.getAddress());
+            VisuallyImpairedUser savedProfile = visuallyImpairedUserService.updateUserById(existingUser.getId(), profile);
+            return Result.success(savedProfile);
+        } catch (Exception e) {
+            return Result.error("保存盲人档案失败");
         }
     }
 
@@ -159,7 +217,7 @@ public class MiniController {
             }
             
             // 移除 Bearer 前缀和空格
-            String cleanToken = token.replace("Bearer", "").trim();
+            String cleanToken = extractToken(token);
             
             // 根据监护人ID过滤设备
             String userId = jwtUtil.getUsernameFromToken(cleanToken);
@@ -409,7 +467,7 @@ public class MiniController {
             // 获取当前用户
             Long userId = null;
             if (token != null && !token.trim().isEmpty()) {
-                String cleanToken = token.replace("Bearer", "").trim();
+                String cleanToken = extractToken(token);
                 String userIdStr = jwtUtil.getUsernameFromToken(cleanToken);
                 Guardian guardian = guardianService.getGuardianById(Long.parseLong(userIdStr));
                 if (guardian != null && guardian.getUserId() != null) {

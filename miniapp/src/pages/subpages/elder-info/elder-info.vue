@@ -3,7 +3,7 @@
     <scroll-view class="content" scroll-y>
       <!-- 基本信息 -->
       <view class="card">
-        <text class="card-title">基本信息</text>
+        <text class="card-title">盲人基本信息</text>
         <view class="form-item">
           <text class="label">姓名</text>
           <input v-model="elderInfo.name" class="input" placeholder="请输入姓名" />
@@ -28,7 +28,7 @@
 
       <!-- 联系信息 -->
       <view class="card">
-        <text class="card-title">联系信息</text>
+        <text class="card-title">联系与监护信息</text>
         <view class="form-item">
           <text class="label">联系电话</text>
           <input v-model="elderInfo.phone" type="number" class="input" placeholder="请输入联系电话" maxlength="11" />
@@ -49,7 +49,7 @@
 
       <!-- 健康信息 -->
       <view class="card">
-        <text class="card-title">健康信息</text>
+        <text class="card-title">健康与注意事项</text>
         <view class="form-item">
           <text class="label">过往病史及注意事项</text>
           <textarea 
@@ -58,21 +58,19 @@
             placeholder="例如：高血压、糖尿病、听力障碍等"
             maxlength="500"
           />
-          <text class="char-count">{{ elderInfo.medicalHistory.length }}/500</text>
+          <text class="char-count">{{ (elderInfo.medicalHistory || '').length }}/500</text>
         </view>
       </view>
 
       <!-- 保存按钮 -->
-      <button class="save-btn" @click="handleSave">保存信息</button>
+      <button class="save-btn" :disabled="saving" @click="handleSave">{{ saving ? '保存中...' : '保存信息' }}</button>
     </scroll-view>
   </view>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useElderStore } from '@/store'
-
-const elderStore = useElderStore()
+import { getBlindProfile, updateBlindProfile } from '@/api/blind'
 
 // 老人信息
 const elderInfo = ref({
@@ -90,12 +88,31 @@ const elderInfo = ref({
 // 选项
 const genders = ['男', '女']
 const bloodTypes = ['A型', 'B型', 'AB型', 'O型', '未知']
+const saving = ref(false)
+
+const normalizeBlindProfile = (data = {}) => ({
+  ...elderInfo.value,
+  ...data,
+  name: data.name ?? '',
+  age: data.age ?? '',
+  gender: data.gender ?? '男',
+  bloodType: data.bloodType ?? '未知',
+  phone: data.phone ?? '',
+  emergencyContact: data.emergencyContact ?? '',
+  emergencyPhone: data.emergencyPhone ?? '',
+  address: data.address ?? '',
+  medicalHistory: data.medicalHistory ?? ''
+})
 
 // 初始化
-onMounted(() => {
-  elderStore.restoreFromStorage()
-  if (elderStore.elderInfo) {
-    elderInfo.value = { ...elderInfo.value, ...elderStore.elderInfo }
+onMounted(async () => {
+  try {
+    const res = await getBlindProfile()
+    if (res && res.data) {
+      elderInfo.value = normalizeBlindProfile(res.data)
+    }
+  } catch (error) {
+    console.error('加载盲人档案失败', error)
   }
 })
 
@@ -110,7 +127,7 @@ const onBloodTypeChange = (e) => {
 }
 
 // 保存
-const handleSave = () => {
+const handleSave = async () => {
   if (!elderInfo.value.name) {
     uni.showToast({
       title: '请输入姓名',
@@ -119,16 +136,30 @@ const handleSave = () => {
     return
   }
 
-  elderStore.setElderInfo(elderInfo.value)
-  
-  uni.showToast({
-    title: '保存成功',
-    icon: 'success'
-  })
-  
-  setTimeout(() => {
-    uni.navigateBack()
-  }, 1500)
+  try {
+    saving.value = true
+    const payload = {
+      ...elderInfo.value,
+      age: elderInfo.value.age === '' ? null : Number(elderInfo.value.age)
+    }
+    const res = await updateBlindProfile(payload)
+    if (res && res.data) {
+      elderInfo.value = normalizeBlindProfile(res.data)
+    }
+
+    uni.showToast({
+      title: '保存成功',
+      icon: 'success'
+    })
+
+    setTimeout(() => {
+      uni.navigateBack()
+    }, 1200)
+  } catch (error) {
+    console.error('保存盲人档案失败', error)
+  } finally {
+    saving.value = false
+  }
 }
 </script>
 

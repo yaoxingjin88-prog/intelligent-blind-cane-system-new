@@ -31,4 +31,10 @@ public class VisuallyImpairedUserService {
     public void updateUser(VisuallyImpairedUser user) {
         userMapper.update(user);
     }
+
+    public VisuallyImpairedUser updateUserById(Long id, VisuallyImpairedUser user) {
+        user.setId(id);
+        userMapper.update(user);
+        return userMapper.getUserById(id);
+    }
 }
