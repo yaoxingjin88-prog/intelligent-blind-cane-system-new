@@ -12,6 +12,9 @@ public interface CaneDeviceMapper {
     @Select("SELECT d.id, d.device_id as deviceId, d.device_name as deviceName, d.user_id as userId, u.name as userName, d.battery_level as batteryLevel, d.status FROM cane_device d LEFT JOIN visually_impaired_user u ON d.user_id = u.id WHERE d.id = #{id}")
     CaneDevice getDeviceById(Long id);
 
+    @Select("SELECT d.id, d.device_id as deviceId, d.device_name as deviceName, d.user_id as userId, u.name as userName, d.battery_level as batteryLevel, d.status FROM cane_device d LEFT JOIN visually_impaired_user u ON d.user_id = u.id WHERE d.user_id = #{userId} ORDER BY d.id ASC LIMIT 1")
+    CaneDevice getDeviceByUserId(Long userId);
+
     @Insert("INSERT INTO cane_device (device_id, device_name, user_id, battery_level, status) VALUES (#{deviceId}, #{deviceName}, #{userId}, #{batteryLevel}, #{status})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(CaneDevice device);

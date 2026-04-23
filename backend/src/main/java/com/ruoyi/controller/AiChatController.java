@@ -1,7 +1,17 @@
 package com.ruoyi.controller;
 
+import com.ruoyi.entity.CaneDevice;
+import com.ruoyi.entity.Guardian;
+import com.ruoyi.entity.SensorData;
+import com.ruoyi.entity.VisuallyImpairedUser;
+import com.ruoyi.service.AmapGeocodingService;
 import com.ruoyi.service.AiChatService;
 import com.ruoyi.service.BaiduSpeechService;
+import com.ruoyi.service.CaneDeviceService;
+import com.ruoyi.service.GuardianService;
+import com.ruoyi.service.SensorDataService;
+import com.ruoyi.service.VisuallyImpairedUserService;
+import com.ruoyi.utils.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +35,55 @@ import java.util.Map;
 public class AiChatController {
 
     private final AiChatService aiChatService;
+    private final AmapGeocodingService amapGeocodingService;
     private final BaiduSpeechService baiduSpeechService;
+    private final GuardianService guardianService;
+    private final VisuallyImpairedUserService visuallyImpairedUserService;
+    private final CaneDeviceService caneDeviceService;
+    private final SensorDataService sensorDataService;
+    private final JwtUtil jwtUtil;
+
+    private String extractToken(String token) {
+        if (token == null) {
+            return null;
+        }
+        return token.replace("Bearer", "").trim();
+    }
+
+    private AiChatService.AiContext buildAiContext(String authorization) {
+        try {
+            String token = extractToken(authorization);
+            if (token == null || token.isBlank()) {
+                return null;
+            }
+            String guardianId = jwtUtil.getUsernameFromToken(token);
+            if (guardianId == null || guardianId.isBlank()) {
+                return null;
+            }
+            Guardian guardian = guardianService.getGuardianById(Long.parseLong(guardianId));
+            if (guardian == null) {
+                return null;
+            }
+            VisuallyImpairedUser blindUser = null;
+            CaneDevice device = null;
+            SensorData latestSensorData = null;
+            String latestAddress = null;
+            if (guardian.getUserId() != null) {
+                blindUser = visuallyImpairedUserService.getUserById(guardian.getUserId());
+                device = caneDeviceService.getDeviceByUserId(guardian.getUserId());
+                if (device != null && device.getDeviceId() != null && !device.getDeviceId().isBlank()) {
+                    latestSensorData = sensorDataService.getLatestSensorData(device.getDeviceId());
+                    if (latestSensorData != null) {
+                        latestAddress = amapGeocodingService.reverseGeocode(latestSensorData.getLatitude(), latestSensorData.getLongitude());
+                    }
+                }
+            }
+            return new AiChatService.AiContext(guardian, blindUser, device, latestSensorData, latestAddress);
+        } catch (Exception e) {
+            log.warn("构建 AI 上下文失败", e);
+            return null;
+        }
+    }
 
     /**
      * 一次性对话（非流式）
@@ -33,10 +91,11 @@ public class AiChatController {
      */
     @Operation(summary = "AI 对话（非流式）")
     @PostMapping("/chat")
-    public Map<String, Object> chat(@RequestBody ChatRequest req) {
+    public Map<String, Object> chat(@RequestBody ChatRequest req,
+                                    @RequestHeader(value = "Authorization", required = false) String authorization) {
         Map<String, Object> resp = new HashMap<>();
         try {
-            String answer = aiChatService.chat(req.getMessages());
+            String answer = aiChatService.chat(req.getMessages(), buildAiContext(authorization));
             resp.put("code", 200);
             resp.put("data", Map.of("content", answer));
         } catch (Exception e) {
@@ -53,9 +112,10 @@ public class AiChatController {
      */
     @Operation(summary = "AI 对话（流式 SSE）")
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chatStream(@RequestBody ChatRequest req) {
+    public SseEmitter chatStream(@RequestBody ChatRequest req,
+                                 @RequestHeader(value = "Authorization", required = false) String authorization) {
         SseEmitter emitter = new SseEmitter(60_000L);
-        aiChatService.chatStream(req.getMessages(), emitter);
+        aiChatService.chatStream(req.getMessages(), buildAiContext(authorization), emitter);
         return emitter;
     }
 

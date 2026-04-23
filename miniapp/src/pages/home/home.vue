@@ -190,9 +190,41 @@ const recentActivities = computed(() => {
 let locationTimer = null
 let dataTimer = null
 
+const handlePhoneLocationChange = (res) => {
+  if (!currentDevice.value || !currentDevice.value.deviceId) {
+    longitude.value = res.longitude
+    latitude.value = res.latitude
+  }
+}
+
+const startPhoneLocationTracking = () => {
+  if (typeof uni.startLocationUpdate !== 'function') return
+  uni.startLocationUpdate({
+    success: () => {
+      if (typeof uni.onLocationChange === 'function') {
+        uni.onLocationChange(handlePhoneLocationChange)
+      }
+    },
+    fail: (error) => {
+      console.warn('启动高精度定位失败', error)
+    }
+  })
+}
+
+const stopPhoneLocationTracking = () => {
+  if (typeof uni.offLocationChange === 'function') {
+    uni.offLocationChange(handlePhoneLocationChange)
+  }
+  if (typeof uni.stopLocationUpdate === 'function') {
+    uni.stopLocationUpdate()
+  }
+}
+
 // 初始化
 onMounted(async () => {
   deviceStore.restoreFromStorage()
+  getUserLocation(!deviceStore.currentDevice || !deviceStore.currentDevice.deviceId)
+  startPhoneLocationTracking()
   
   // 如果没有当前设备，自动获取设备列表并选第一个
   if (!deviceStore.currentDevice || !deviceStore.currentDevice.deviceId) {
@@ -212,19 +244,28 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopAutoRefresh()
+  stopPhoneLocationTracking()
 })
 
 // 获取用户自身位置（无设备时使用）
-const getUserLocation = () => {
+const getUserLocation = (syncMapCenter = true) => {
   uni.getLocation({
     type: 'gcj02',
+    isHighAccuracy: true,
+    highAccuracyExpireTime: 5000,
     success: (res) => {
-      longitude.value = res.longitude
-      latitude.value = res.latitude
-      currentAddress.value = '当前位置（未绑定设备）'
+      if (syncMapCenter) {
+        longitude.value = res.longitude
+        latitude.value = res.latitude
+      }
+      if (!currentDevice.value || !currentDevice.value.deviceId) {
+        currentAddress.value = '当前位置（未绑定设备）'
+      }
     },
     fail: () => {
-      currentAddress.value = '未绑定设备，请先绑定'
+      if (!currentDevice.value || !currentDevice.value.deviceId) {
+        currentAddress.value = '未绑定设备，请先绑定'
+      }
     }
   })
 }

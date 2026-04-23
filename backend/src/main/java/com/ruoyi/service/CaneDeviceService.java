@@ -23,6 +23,10 @@ public class CaneDeviceService {
         return deviceMapper.getDeviceById(id);
     }
 
+    public CaneDevice getDeviceByUserId(Long userId) {
+        return deviceMapper.getDeviceByUserId(userId);
+    }
+
     public void addDevice(CaneDevice device) {
         deviceMapper.insert(device);
     }
