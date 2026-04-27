@@ -5,6 +5,7 @@
       <!-- 用户信息卡片 -->
       <view class="user-card">
         <view class="user-bg"></view>
+        <view class="user-bg user-bg-secondary"></view>
         <view class="user-info">
           <view class="avatar" @click="chooseAvatar">
             <image v-if="userInfo && userInfo.avatar" :src="userInfo.avatar" mode="aspectFill" />
@@ -28,10 +29,29 @@
             <view class="badge" v-if="unreadCount > 0">{{ unreadCount }}</view>
           </view>
         </view>
+        <view class="profile-summary">
+          <view class="summary-pill">
+            <text class="summary-label">已绑定设备</text>
+            <text class="summary-value">{{ deviceCount }}</text>
+          </view>
+          <view class="summary-pill">
+            <text class="summary-label">未读提醒</text>
+            <text class="summary-value">{{ unreadCount }}</text>
+          </view>
+          <view class="summary-pill">
+            <text class="summary-label">账户状态</text>
+            <text class="summary-value">{{ (userInfo && userInfo.isVerified) ? '已实名' : '待完善' }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="profile-section-header">
+        <text class="section-kicker">Services</text>
+        <text class="section-title">快捷服务</text>
       </view>
 
       <!-- 设备管理 -->
-      <view class="menu-card" @click="navigateToDevice">
+      <view class="menu-card device-card" @click="navigateToDevice">
         <view class="menu-item">
           <view class="menu-icon device">
             <text>📱</text>
@@ -53,6 +73,19 @@
           <view class="menu-content">
             <text class="menu-title">明眼助手</text>
             <text class="menu-desc">AI 语音问答，随时为您服务</text>
+          </view>
+          <text class="menu-arrow">›</text>
+        </view>
+      </view>
+
+      <view class="menu-card crossing-card" @click="navigateToCrossingAssist">
+        <view class="menu-item">
+          <view class="menu-icon crossing">
+            <text>🚦</text>
+          </view>
+          <view class="menu-content">
+            <text class="menu-title">路口安全通行辅助</text>
+            <text class="menu-desc">查看红绿灯、斑马线方向与实时提醒</text>
           </view>
           <text class="menu-arrow">›</text>
         </view>
@@ -91,6 +124,11 @@
       </view>
 
       <!-- 设置菜单 -->
+      <view class="profile-section-header compact">
+        <text class="section-kicker">Settings</text>
+        <text class="section-title">更多设置</text>
+      </view>
+
       <view class="settings-card">
         <view class="menu-item" @click="navigateToSubpage('elder-info')">
           <view class="menu-icon elder">
@@ -240,6 +278,12 @@ const navigateToAiChat = () => {
   })
 }
 
+const navigateToCrossingAssist = () => {
+  uni.navigateTo({
+    url: '/pages/crossing/crossing'
+  })
+}
+
 // 导航到子页面
 const navigateToSubpage = (page) => {
   uni.navigateTo({
@@ -311,23 +355,25 @@ const chooseAvatar = () => {
 
 <style lang="scss" scoped>
 .profile-page {
-  height: 100vh;
-  background: #f7f8fa;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #eef4ff 0%, #f8fafc 32%, #f4f7fb 100%);
   display: flex;
   flex-direction: column;
 }
 
 .content {
   flex: 1;
-  padding-bottom: 32rpx;
+  padding: 24rpx 0 40rpx;
 }
 
 .user-card {
-  background: linear-gradient(135deg, #e6f8ee 0%, #f7f8fa 100%);
-  padding: 32rpx;
+  background: linear-gradient(135deg, #081226 0%, #1d4ed8 58%, #14b8a6 100%);
+  padding: 34rpx;
   position: relative;
   overflow: hidden;
-  margin-bottom: 32rpx;
+  margin: 0 24rpx 28rpx;
+  border-radius: 32rpx;
+  box-shadow: 0 18rpx 36rpx rgba(29, 78, 216, 0.22);
 
   .user-bg {
     position: absolute;
@@ -335,9 +381,18 @@ const chooseAvatar = () => {
     right: -100rpx;
     width: 300rpx;
     height: 300rpx;
-    background: rgba(7, 193, 96, 0.1);
+    background: rgba(255, 255, 255, 0.12);
     border-radius: 50%;
     filter: blur(40rpx);
+  }
+
+  .user-bg-secondary {
+    top: auto;
+    right: auto;
+    left: -80rpx;
+    bottom: -120rpx;
+    width: 260rpx;
+    height: 260rpx;
   }
 
   .user-info {
@@ -351,7 +406,7 @@ const chooseAvatar = () => {
       width: 128rpx;
       height: 128rpx;
       border-radius: 50%;
-      background: linear-gradient(135deg, #d9fbe7 0%, #9ae6b4 100%);
+      background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
       border: 4rpx solid #ffffff;
       overflow: hidden;
       display: flex;
@@ -371,7 +426,7 @@ const chooseAvatar = () => {
         display: flex;
         align-items: center;
         justify-content: center;
-        background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+        background: linear-gradient(135deg, #60a5fa 0%, #2563eb 100%);
 
         .avatar-initial {
           font-size: 52rpx;
@@ -414,13 +469,13 @@ const chooseAvatar = () => {
         .user-name {
           font-size: 32rpx;
           font-weight: bold;
-          color: #1f2937;
+          color: #ffffff;
         }
 
         .verified-badge {
           padding: 4rpx 12rpx;
-          background: #d1fae5;
-          color: #059669;
+          background: rgba(255, 255, 255, 0.16);
+          color: #dbeafe;
           font-size: 20rpx;
           border-radius: 12rpx;
           font-weight: 600;
@@ -429,14 +484,14 @@ const chooseAvatar = () => {
 
       .user-phone {
         font-size: 24rpx;
-        color: #6b7280;
+        color: rgba(255, 255, 255, 0.78);
       }
 
       .user-role {
         display: block;
         margin-bottom: 8rpx;
         font-size: 22rpx;
-        color: #059669;
+        color: #bfdbfe;
         font-weight: 600;
       }
     }
@@ -444,7 +499,7 @@ const chooseAvatar = () => {
     .message-icon {
       width: 80rpx;
       height: 80rpx;
-      background: #f3f4f6;
+      background: rgba(255, 255, 255, 0.14);
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -453,6 +508,7 @@ const chooseAvatar = () => {
 
       .icon {
         font-size: 32rpx;
+        color: #ffffff;
       }
 
       .badge {
@@ -476,15 +532,82 @@ const chooseAvatar = () => {
   }
 }
 
+.profile-summary {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16rpx;
+  margin-top: 28rpx;
+}
+
+.summary-pill {
+  padding: 18rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+}
+
+.summary-label {
+  display: block;
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.summary-value {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #ffffff;
+  word-break: break-all;
+}
+
+.profile-section-header {
+  margin: 0 24rpx 18rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.profile-section-header.compact {
+  margin-top: 6rpx;
+}
+
+.section-kicker {
+  font-size: 20rpx;
+  color: #64748b;
+  letter-spacing: 2rpx;
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #0f172a;
+}
+
 .menu-card,
 .stats-card,
 .settings-card {
-  background: #ffffff;
-  border-radius: 24rpx;
-  margin: 0 32rpx 24rpx;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.06);
-  border: 1rpx solid #f3f4f6;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 28rpx;
+  margin: 0 24rpx 24rpx;
+  box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.06);
+  border: 1rpx solid #e5e7eb;
   overflow: hidden;
+}
+
+.menu-card.device-card {
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+}
+
+.menu-card.ai-card {
+  background: linear-gradient(135deg, #eef2ff 0%, #ffffff 100%);
+}
+
+.menu-card.crossing-card {
+  background: linear-gradient(135deg, #ecfeff 0%, #ffffff 100%);
 }
 
 .menu-item {
@@ -516,6 +639,11 @@ const chooseAvatar = () => {
       color: #ffffff;
     }
 
+    &.crossing {
+      background: linear-gradient(135deg, #1d4ed8, #22c55e);
+      color: #ffffff;
+    }
+
     &.elder {
       background: #fef3c7;
     }
@@ -534,26 +662,29 @@ const chooseAvatar = () => {
 
     .menu-title {
       font-size: 28rpx;
-      color: #1f2937;
+      color: #0f172a;
       display: block;
       margin-bottom: 8rpx;
+      font-weight: 700;
     }
 
     .menu-desc {
       font-size: 24rpx;
-      color: #9ca3af;
+      color: #64748b;
+      line-height: 1.5;
     }
   }
 
   .menu-title {
     flex: 1;
     font-size: 28rpx;
-    color: #1f2937;
+    color: #0f172a;
+    font-weight: 600;
   }
 
   .menu-arrow {
     font-size: 48rpx;
-    color: #d1d5db;
+    color: #cbd5e1;
   }
 }
 
@@ -568,8 +699,8 @@ const chooseAvatar = () => {
 
     .stats-title {
       font-size: 28rpx;
-      font-weight: 600;
-      color: #1f2937;
+      font-weight: 700;
+      color: #0f172a;
     }
 
     .stats-period {
@@ -585,6 +716,9 @@ const chooseAvatar = () => {
 
     .stat-item {
       flex: 1;
+      padding: 18rpx 20rpx;
+      border-radius: 20rpx;
+      background: #f8fafc;
 
       .stat-label {
         display: block;
@@ -627,14 +761,14 @@ const chooseAvatar = () => {
 
       .chart-bar {
         flex: 1;
-        background: #dbeafe;
+        background: linear-gradient(180deg, #bfdbfe 0%, #dbeafe 100%);
         border-radius: 8rpx 8rpx 0 0;
         position: relative;
         min-height: 8rpx;
         transition: height 0.3s;
 
         &.active {
-          background: #07c160;
+          background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
         }
 
         .bar-label {
@@ -651,14 +785,14 @@ const chooseAvatar = () => {
 }
 
 .logout-btn {
-  margin: 32rpx;
+  margin: 32rpx 24rpx 0;
   height: 88rpx;
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #fff1f2 100%);
   color: #ee0a24;
   border-radius: 24rpx;
   font-size: 28rpx;
-  font-weight: 600;
+  font-weight: 700;
   border: 1rpx solid #fee2e2;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.06);
+  box-shadow: 0 14rpx 28rpx rgba(239, 68, 68, 0.08);
 }
 </style>

@@ -113,19 +113,33 @@
         "navigationBarBackgroundColor": "#07c160",
         "navigationBarTextStyle": "white"
       }
+    },
+    {
+      "path": "pages/crossing/crossing",
+      "style": {
+        "navigationBarTitleText": "路口辅助",
+        "navigationStyle": "default"
+      }
+    },
+    {
+      "path": "pages/user-terminal/user-terminal",
+      "style": {
+        "navigationBarTitleText": "用户端演示",
+        "navigationStyle": "default"
+      }
     }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "智能盲杖",
     "navigationBarBackgroundColor": "#FFFFFF",
-    "backgroundColor": "#F7F8FA"
+    "backgroundColor": "#F4F7FB"
   },
   "tabBar": {
-    "color": "#999999",
-    "selectedColor": "#07c160",
+    "color": "#94A3B8",
+    "selectedColor": "#22C55E",
     "backgroundColor": "#FFFFFF",
-    "borderStyle": "black",
+    "borderStyle": "white",
     "list": [
       {
         "pagePath": "pages/home/home",

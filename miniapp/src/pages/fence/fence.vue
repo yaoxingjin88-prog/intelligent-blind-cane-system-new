@@ -1,5 +1,23 @@
 <template>
   <view class="fence-page">
+    <view class="fence-hero">
+      <view class="fence-hero-copy">
+        <text class="hero-kicker">Geo Guard</text>
+        <text class="hero-title">电子围栏与轨迹回放</text>
+        <text class="hero-desc">管理常用守护区域、查看当前位置状态，并回放设备移动轨迹。</text>
+      </view>
+      <view class="hero-stats">
+        <view class="hero-stat primary">
+          <text class="hero-stat-label">启用围栏</text>
+          <text class="hero-stat-value">{{ enabledFenceCount }}</text>
+        </view>
+        <view class="hero-stat" :class="inSafeZone ? 'safe' : 'danger'">
+          <text class="hero-stat-label">当前位置</text>
+          <text class="hero-stat-value">{{ fenceStatusLabel }}</text>
+        </view>
+      </view>
+    </view>
+
     <!-- 模块切换 -->
     <view class="module-tabs">
       <view 
@@ -21,7 +39,10 @@
     <!-- 电子围栏模块 -->
     <scroll-view v-if="activeModule === 'fence'" class="fence-content" scroll-y>
       <view class="fence-header">
-        <text class="fence-title">常用守护区域 ({{ fenceList.length }}/5)</text>
+        <view class="section-caption compact">
+          <text class="section-kicker">Fence</text>
+          <text class="fence-title">常用守护区域 ({{ fenceList.length }}/5)</text>
+        </view>
         <view class="add-btn" @click="showCreateFence = true">
           <text class="icon">➕</text>
           <text>新建围栏</text>
@@ -34,7 +55,10 @@
             <text>{{ getFenceIcon(fence.type) }}</text>
           </view>
           <view class="fence-info">
-            <text class="fence-name">{{ fence.name }}</text>
+            <view class="fence-name-row">
+              <text class="fence-name">{{ fence.name }}</text>
+              <text class="fence-badge" :class="fence.isAlarmEnabled ? 'on' : 'off'">{{ fence.isAlarmEnabled ? '报警已开' : '已暂停' }}</text>
+            </view>
             <text class="fence-desc">{{ getFenceDesc(fence) }}</text>
           </view>
           <view class="fence-switch" @click="toggleFenceStatus(fence)">
@@ -87,7 +111,10 @@
 
       <!-- 最近越界记录 -->
       <view class="recent-breach-section" v-if="recentBreaches.length > 0">
-        <text class="section-title">最近越界记录</text>
+        <view class="section-caption compact breach-caption">
+          <text class="section-kicker">Recent</text>
+          <text class="section-title">最近越界记录</text>
+        </view>
         <view class="breach-list">
           <view v-for="(item, idx) in recentBreaches" :key="idx" class="breach-item">
             <text class="breach-icon">🚨</text>
@@ -103,7 +130,10 @@
     <!-- 轨迹回放模块 -->
     <scroll-view v-if="activeModule === 'trajectory'" class="trajectory-content" scroll-y>
       <view class="trajectory-header">
-        <text class="trajectory-title">轨迹查询</text>
+        <view class="section-caption compact">
+          <text class="section-kicker">Trajectory</text>
+          <text class="trajectory-title">轨迹查询</text>
+        </view>
       </view>
 
       <!-- 时间选择 -->
@@ -250,6 +280,12 @@ const mapCenter = ref({
 
 // 围栏列表
 const fenceList = ref([])
+
+const enabledFenceCount = computed(() => fenceList.value.filter(item => item.isAlarmEnabled).length)
+const fenceStatusLabel = computed(() => {
+  if (!fenceList.value.length) return '未配置'
+  return inSafeZone.value ? '安全中' : '越界提醒'
+})
 
 // 加载围栏列表
 const loadFenceList = async () => {
@@ -720,37 +756,142 @@ const runAnimation = () => {
 <style lang="scss" scoped>
 .fence-page {
   min-height: 100vh;
-  background: #f7f8fa;
+  background: linear-gradient(180deg, #eef4ff 0%, #f8fafc 30%, #f4f7fb 100%);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
 }
 
-.module-tabs {
-  background: #ffffff;
+.fence-hero {
+  margin: 24rpx 24rpx 20rpx;
+  padding: 30rpx;
+  border-radius: 30rpx;
+  background: linear-gradient(135deg, #081226 0%, #1d4ed8 56%, #14b8a6 100%);
+  box-shadow: 0 18rpx 36rpx rgba(29, 78, 216, 0.22);
+}
+
+.fence-hero-copy {
   display: flex;
-  padding: 16rpx 32rpx;
+  flex-direction: column;
+}
+
+.hero-kicker {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 20rpx;
+  letter-spacing: 2rpx;
+}
+
+.hero-title {
+  margin-top: 18rpx;
+  font-size: 40rpx;
+  line-height: 1.3;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.hero-desc {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.hero-stat {
+  padding: 20rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+}
+
+.hero-stat.primary {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.hero-stat.safe {
+  background: rgba(34, 197, 94, 0.16);
+}
+
+.hero-stat.danger {
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.hero-stat-label {
+  display: block;
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.hero-stat-value {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.section-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.section-caption.compact {
+  gap: 4rpx;
+}
+
+.section-kicker {
+  font-size: 20rpx;
+  color: #64748b;
+  letter-spacing: 2rpx;
+}
+
+.section-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.module-tabs {
+  margin: 0 24rpx 20rpx;
+  background: rgba(255, 255, 255, 0.92);
+  display: flex;
+  padding: 12rpx;
   gap: 16rpx;
   position: sticky;
   top: 0;
   z-index: 99;
+  border-radius: 24rpx;
+  border: 1rpx solid #e5e7eb;
+  box-shadow: 0 12rpx 24rpx rgba(15, 23, 42, 0.05);
 
   .tab-item {
     flex: 1;
     height: 72rpx;
-    border-radius: 16rpx;
+    border-radius: 18rpx;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 28rpx;
+    font-size: 26rpx;
     font-weight: 600;
     border: 1rpx solid #e5e7eb;
     color: #6b7280;
 
     &.active {
-      background: #07c160;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
       color: #ffffff;
-      border-color: #07c160;
+      border-color: #2563eb;
     }
   }
 }
@@ -758,7 +899,7 @@ const runAnimation = () => {
 .fence-content,
 .trajectory-content {
   flex: 1;
-  padding: 32rpx;
+  padding: 0 24rpx 32rpx;
   width: 100%;
   box-sizing: border-box;
 }
@@ -772,17 +913,21 @@ const runAnimation = () => {
 
   .fence-title,
   .trajectory-title {
-    font-size: 28rpx;
-    font-weight: 600;
-    color: #1f2937;
+    font-size: 30rpx;
+    font-weight: 700;
+    color: #0f172a;
   }
 
   .add-btn {
     display: flex;
     align-items: center;
     gap: 8rpx;
-    color: #07c160;
-    font-size: 28rpx;
+    color: #2563eb;
+    font-size: 24rpx;
+    font-weight: 700;
+    padding: 12rpx 18rpx;
+    border-radius: 999rpx;
+    background: rgba(37, 99, 235, 0.08);
 
     .icon {
       font-size: 24rpx;
@@ -797,16 +942,20 @@ const runAnimation = () => {
   margin-bottom: 32rpx;
 
   .fence-item {
-    background: #ffffff;
-    border-radius: 24rpx;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border-radius: 28rpx;
     padding: 32rpx;
     display: flex;
     align-items: center;
     gap: 24rpx;
-    box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.06);
-    border: 1rpx solid #f3f4f6;
+    box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.06);
+    border: 1rpx solid #e5e7eb;
     width: 100%;
     box-sizing: border-box;
+
+    &:active {
+      transform: translateY(2rpx);
+    }
 
     .fence-icon {
       width: 80rpx;
@@ -833,18 +982,44 @@ const runAnimation = () => {
     .fence-info {
       flex: 1;
 
-      .fence-name {
-        display: block;
-        font-size: 28rpx;
-        font-weight: 600;
-        color: #1f2937;
+      .fence-name-row {
+        display: flex;
+        align-items: center;
+        gap: 12rpx;
         margin-bottom: 8rpx;
+      }
+
+      .fence-name {
+        font-size: 28rpx;
+        font-weight: 700;
+        color: #0f172a;
+      }
+
+      .fence-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6rpx 14rpx;
+        border-radius: 999rpx;
+        font-size: 20rpx;
+        font-weight: 700;
+
+        &.on {
+          background: rgba(34, 197, 94, 0.14);
+          color: #15803d;
+        }
+
+        &.off {
+          background: rgba(148, 163, 184, 0.14);
+          color: #64748b;
+        }
       }
 
       .fence-desc {
         display: block;
         font-size: 24rpx;
-        color: #9ca3af;
+        color: #64748b;
+        line-height: 1.6;
       }
     }
 
@@ -884,10 +1059,11 @@ const runAnimation = () => {
 .fence-map-preview,
 .trajectory-map-container {
   height: 560rpx;
-  border-radius: 24rpx;
+  border-radius: 28rpx;
   overflow: hidden;
   border: 1rpx solid #e5e7eb;
   margin-bottom: 24rpx;
+  box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.06);
 
   .fence-map,
   .trajectory-map {
@@ -899,9 +1075,10 @@ const runAnimation = () => {
 .fence-status-card {
   background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%);
   border: 1rpx solid #a7f3d0;
-  border-radius: 24rpx;
+  border-radius: 28rpx;
   padding: 32rpx;
   margin-bottom: 24rpx;
+  box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.06);
 
   &.out-of-fence {
     background: linear-gradient(135deg, #fef2f2 0%, #ffffff 100%);
@@ -962,17 +1139,19 @@ const runAnimation = () => {
 }
 
 .recent-breach-section {
-  background: #ffffff;
-  border-radius: 24rpx;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 28rpx;
   padding: 24rpx 32rpx;
   margin-bottom: 24rpx;
+  border: 1rpx solid #e5e7eb;
+  box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.06);
+
+  .breach-caption {
+    margin-bottom: 16rpx;
+  }
 
   .section-title {
-    font-size: 28rpx;
-    font-weight: 600;
-    color: #1f2937;
-    display: block;
-    margin-bottom: 16rpx;
+    margin: 0;
   }
 
   .breach-item {
@@ -1013,10 +1192,12 @@ const runAnimation = () => {
   display: flex;
   align-items: center;
   gap: 24rpx;
-  background: #ffffff;
-  border-radius: 24rpx;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 28rpx;
   padding: 32rpx;
   margin-bottom: 24rpx;
+  border: 1rpx solid #e5e7eb;
+  box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.06);
 
   .time-item {
     flex: 1;
@@ -1046,16 +1227,18 @@ const runAnimation = () => {
   display: flex;
   align-items: center;
   gap: 24rpx;
-  background: #ffffff;
-  border-radius: 24rpx;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 28rpx;
   padding: 32rpx;
   margin-bottom: 24rpx;
+  border: 1rpx solid #e5e7eb;
+  box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.06);
 
   .control-btn {
     width: 80rpx;
     height: 80rpx;
     border-radius: 50%;
-    background: #07c160;
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
     color: #ffffff;
     font-size: 32rpx;
     border: none;
@@ -1086,9 +1269,9 @@ const runAnimation = () => {
       border: 1rpx solid #e5e7eb;
 
       &.active {
-        background: #07c160;
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
         color: #ffffff;
-        border-color: #07c160;
+        border-color: #2563eb;
       }
     }
   }
@@ -1097,13 +1280,18 @@ const runAnimation = () => {
 .trajectory-stats {
   display: flex;
   gap: 24rpx;
-  background: #ffffff;
-  border-radius: 24rpx;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 28rpx;
   padding: 32rpx;
+  border: 1rpx solid #e5e7eb;
+  box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.06);
 
   .stat-item {
     flex: 1;
     text-align: center;
+    padding: 12rpx;
+    border-radius: 20rpx;
+    background: #f8fafc;
 
     .stat-label {
       display: block;
@@ -1142,7 +1330,7 @@ const runAnimation = () => {
 .create-fence-popup {
   width: 100%;
   background: #ffffff;
-  border-radius: 24rpx 24rpx 0 0;
+  border-radius: 28rpx 28rpx 0 0;
   padding: 48rpx;
   box-sizing: border-box;
   max-height: 80vh;
@@ -1198,7 +1386,7 @@ const runAnimation = () => {
         .type-item {
           flex: 1;
           height: 88rpx;
-          border-radius: 16rpx;
+          border-radius: 18rpx;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1207,9 +1395,9 @@ const runAnimation = () => {
           color: #6b7280;
 
           &.active {
-            background: #07c160;
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
             color: #ffffff;
-            border-color: #07c160;
+            border-color: #2563eb;
           }
         }
       }
@@ -1264,7 +1452,7 @@ const runAnimation = () => {
     }
 
     .confirm-btn {
-      background: #07c160;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
       color: #ffffff;
     }
   }

@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 public class DeviceTestSimulationService {
-    private static final int REPORT_INTERVAL_SECONDS = 30;
+    private static final int REPORT_INTERVAL_SECONDS = 10;
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Autowired

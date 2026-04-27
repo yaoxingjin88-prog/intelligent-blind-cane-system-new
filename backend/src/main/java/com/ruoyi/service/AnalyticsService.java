@@ -76,7 +76,7 @@ public class AnalyticsService {
         long lowBatteryDevices = devices.stream()
                 .filter(device -> device.getBatteryLevel() != null && device.getBatteryLevel() <= 20)
                 .count();
-        long unhandledAlarms = alarmRecords.stream().filter(alarm -> "0".equals(String.valueOf(alarm.getStatus()))).count();
+        long unhandledAlarms = alarmRecords.stream().filter(this::isUnhandledAlarm).count();
         long riskEvents = sensorDataList.stream()
                 .filter(sensor -> sensor.getObstacleDistance() != null && sensor.getObstacleDistance() <= 80)
                 .count();
@@ -177,7 +177,7 @@ public class AnalyticsService {
         return alarmsByDevice.entrySet().stream()
                 .map(entry -> {
                     List<AlarmRecord> alarms = entry.getValue();
-                    long unhandledCount = alarms.stream().filter(alarm -> "0".equals(String.valueOf(alarm.getStatus()))).count();
+                    long unhandledCount = alarms.stream().filter(this::isUnhandledAlarm).count();
                     Map<String, Object> item = new LinkedHashMap<>();
                     item.put("deviceId", entry.getKey());
                     item.put("deviceName", normalizeDeviceName(deviceMap.get(entry.getKey())));
@@ -201,7 +201,7 @@ public class AnalyticsService {
         for (CaneDevice device : devices) {
             SensorData latestSensor = latestSensorByDevice.get(device.getDeviceId());
             List<AlarmRecord> alarms = alarmsByDevice.getOrDefault(device.getDeviceId(), Collections.emptyList());
-            long unhandledCount = alarms.stream().filter(alarm -> "0".equals(String.valueOf(alarm.getStatus()))).count();
+            long unhandledCount = alarms.stream().filter(this::isUnhandledAlarm).count();
             LocalDateTime latestTime = extractSensorTime(latestSensor);
             long freshnessMinutes = latestTime == null ? 999 : Math.max(0, Duration.between(latestTime, LocalDateTime.now()).toMinutes());
             int score = 100;
@@ -227,23 +227,29 @@ public class AnalyticsService {
             item.put("latestDataTime", latestTime == null ? "-" : DATE_TIME_FORMATTER.format(latestTime));
             item.put("freshnessMinutes", latestTime == null ? null : freshnessMinutes);
             item.put("latestObstacleDistance", latestSensor == null ? null : latestSensor.getObstacleDistance());
-            item.put("latestFallConfidence", latestSensor == null ? null : latestSensor.getFallConfidence());
-            item.put("alarmCount", alarms.size());
             item.put("unhandledCount", unhandledCount);
             panel.add(item);
         }
 
-        panel.sort((left, right) -> Integer.compare(((Number) right.get("healthScore")).intValue(), ((Number) left.get("healthScore")).intValue()));
+        panel.sort((left, right) -> Integer.compare(((Number) left.get("healthScore")).intValue(), ((Number) right.get("healthScore")).intValue()));
         return panel;
+    }
+
+    private boolean isUnhandledAlarm(AlarmRecord alarm) {
+        if (alarm == null || alarm.getStatus() == null) {
+            return false;
+        }
+        String status = alarm.getStatus().trim();
+        return "0".equals(status) || "未处理".equals(status);
     }
 
     private List<Map<String, Object>> buildHeatmapPoints(List<SensorData> sensorDataList, Map<String, CaneDevice> deviceMap) {
         Map<String, Map<String, Object>> grouped = new LinkedHashMap<>();
         for (SensorData sensorData : sensorDataList) {
-            if (sensorData.getLatitude() == null || sensorData.getLongitude() == null || sensorData.getObstacleDistance() == null) {
+            if (sensorData.getLongitude() == null || sensorData.getLatitude() == null) {
                 continue;
             }
-            if (sensorData.getObstacleDistance() > 80) {
+            if (sensorData.getObstacleDistance() == null || sensorData.getObstacleDistance() > 80) {
                 continue;
             }
             double lat = round(sensorData.getLatitude(), 4);

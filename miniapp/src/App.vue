@@ -4,12 +4,90 @@
 
 <script setup>
 import { onLaunch, onShow, onHide } from '@dcloudio/uni-app'
-import { WS_URL } from '@/config/env'
+import { WS_URL, BASE_URL } from '@/config/env'
 
 // ====== 全局 WebSocket ======
 let socketTask = null
 let reconnectTimer = null
 let heartbeatTimer = null
+let crossingAudioContext = null
+
+const stopCrossingAudio = () => {
+  if (crossingAudioContext) {
+    try { crossingAudioContext.stop() } catch (e) {}
+    try { crossingAudioContext.destroy() } catch (e) {}
+    crossingAudioContext = null
+  }
+}
+
+const playCrossingPrompt = async (text, options = {}) => {
+  if (!text) {
+    return
+  }
+  const waitForCompletion = !!options.waitForCompletion
+  try {
+    const token = uni.getStorageSync('token')
+    const res = await new Promise((resolve, reject) => {
+      uni.request({
+        url: BASE_URL + '/ai/tts',
+        method: 'POST',
+        data: { text },
+        responseType: 'arraybuffer',
+        header: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        success: resolve,
+        fail: reject
+      })
+    })
+    if (res.statusCode !== 200 || !res.data) {
+      throw new Error(`TTS 请求失败: ${res.statusCode || 'unknown'}`)
+    }
+    // #ifdef MP-WEIXIN
+    await new Promise((resolve) => {
+      const fs = wx.getFileSystemManager()
+      const filePath = `${wx.env.USER_DATA_PATH}/crossing_ws_${Date.now()}.mp3`
+      fs.writeFileSync(filePath, res.data, 'binary')
+      stopCrossingAudio()
+      crossingAudioContext = uni.createInnerAudioContext()
+      crossingAudioContext.obeyMuteSwitch = false
+      crossingAudioContext.src = filePath
+      let resolved = false
+      const finish = () => {
+        if (resolved) return
+        resolved = true
+        stopCrossingAudio()
+        resolve()
+      }
+      crossingAudioContext.onEnded(() => { finish() })
+      crossingAudioContext.onError(() => { finish() })
+      crossingAudioContext.onCanplay(() => {
+        setTimeout(() => {
+          try {
+            crossingAudioContext && crossingAudioContext.play()
+            if (!waitForCompletion) {
+              resolve()
+            }
+          } catch (e) {
+            finish()
+          }
+        }, 80)
+      })
+      if (!waitForCompletion) {
+        setTimeout(() => {
+          if (!resolved) {
+            resolved = true
+            resolve()
+          }
+        }, 120)
+      }
+    })
+    // #endif
+  } catch (e) {
+    console.warn('[WS] 路口辅助语音播报失败', e)
+  }
+}
 
 const connectWebSocket = () => {
   const token = uni.getStorageSync('token')
@@ -78,6 +156,36 @@ const disconnectWebSocket = () => {
   }
 }
 
+const updateGuardianCache = (key, value) => {
+  const app = getApp()
+  if (app) {
+    app.globalData = app.globalData || {}
+    app.globalData[key] = value
+  }
+  uni.setStorageSync(key, value)
+}
+
+const getCurrentRoute = () => {
+  try {
+    const pages = getCurrentPages()
+    const currentPage = pages && pages.length ? pages[pages.length - 1] : null
+    return currentPage?.route || ''
+  } catch (e) {
+    return ''
+  }
+}
+
+const setSosAnnouncementState = (pending, defer) => {
+  const app = getApp()
+  if (app) {
+    app.globalData = app.globalData || {}
+    app.globalData.pendingGuardianSosAnnouncement = pending
+    app.globalData.deferGuardianSosAnnouncement = defer
+  }
+  uni.setStorageSync('pendingGuardianSosAnnouncement', pending)
+  uni.setStorageSync('deferGuardianSosAnnouncement', defer)
+}
+
 // 处理来自后端的消息
 const handleWsMessage = (msg) => {
   switch (msg.type) {
@@ -96,6 +204,61 @@ const handleWsMessage = (msg) => {
       // 可选：收到报警也提示一下
       uni.showToast({ title: msg.message || '收到报警', icon: 'none' })
       break
+    case 'CROSSING_ASSIST': {
+      const app = getApp()
+      if (app) {
+        app.globalData = app.globalData || {}
+        app.globalData.latestCrossingAssist = msg.crossingAssist || null
+      }
+      if (msg.crossingAssist) {
+        uni.setStorageSync('latestCrossingAssist', msg.crossingAssist)
+        uni.$emit('crossingAssistUpdate', msg.crossingAssist)
+      }
+      const recommendation = msg.crossingAssist?.recommendation
+      try {
+        if (recommendation === 'WAIT') {
+          uni.vibrateLong({ fail: () => {} })
+        } else {
+          uni.vibrateShort({ fail: () => {} })
+        }
+      } catch (e) {}
+      uni.showToast({ title: msg.message || '收到路口辅助提醒', icon: 'none', duration: 2000 })
+      playCrossingPrompt(msg.message)
+      break
+    }
+    case 'GUARDIAN_ALERT':
+      updateGuardianCache('latestGuardianAlert', msg)
+      try {
+        if (msg.level === 'danger') {
+          uni.vibrateLong({ fail: () => {} })
+        } else {
+          uni.vibrateShort({ fail: () => {} })
+        }
+      } catch (e) {}
+      if (msg.alertType === 'SOS') {
+        const app = getApp()
+        const currentRoute = getCurrentRoute()
+        const deferGuardianSosAnnouncement = !!(app?.globalData?.deferGuardianSosAnnouncement || uni.getStorageSync('deferGuardianSosAnnouncement'))
+        const shouldDefer = deferGuardianSosAnnouncement || currentRoute.includes('pages/user-terminal/user-terminal') || currentRoute.includes('pages/ai-chat/ai-chat')
+        if (shouldDefer) {
+          setSosAnnouncementState(true, true)
+          break
+        }
+      }
+      uni.showToast({ title: msg.alertType === 'SOS' ? '收到 SOS 求助' : (msg.message || '收到守护提醒'), icon: 'none', duration: 2200 })
+      playCrossingPrompt(msg.message)
+      break
+    case 'GUARDIAN_COMFORT':
+      updateGuardianCache('latestGuardianComfort', msg)
+      uni.showToast({ title: '收到家属安抚', icon: 'none', duration: 2200 })
+      playCrossingPrompt(msg.content || msg.message)
+      break
+    case 'GUARDIAN_DESTINATION':
+      updateGuardianCache('latestGuardianDestination', msg)
+      try { uni.vibrateShort({ fail: () => {} }) } catch (e) {}
+      uni.showToast({ title: '收到家属目的地', icon: 'none', duration: 2200 })
+      playCrossingPrompt(msg.message || `新的目的地：${msg.destination || ''}`)
+      break
     default:
       break
   }
@@ -104,6 +267,8 @@ const handleWsMessage = (msg) => {
 // 暴露给其他页面（如登录后）调用
 // eslint-disable-next-line
 getApp.__$connectWs = connectWebSocket
+// eslint-disable-next-line
+getApp.__$playCrossingPrompt = playCrossingPrompt
 
 onLaunch(() => {
   console.log('App Launch')
@@ -111,14 +276,25 @@ onLaunch(() => {
   if (app) {
     app.globalData = app.globalData || {}
     app.globalData.aiWakeTrigger = false
+    app.globalData.latestCrossingAssist = uni.getStorageSync('latestCrossingAssist') || null
+    app.globalData.latestGuardianAlert = uni.getStorageSync('latestGuardianAlert') || null
+    app.globalData.latestGuardianComfort = uni.getStorageSync('latestGuardianComfort') || null
+    app.globalData.latestGuardianDestination = uni.getStorageSync('latestGuardianDestination') || null
+    app.globalData.pendingGuardianSosAnnouncement = !!uni.getStorageSync('pendingGuardianSosAnnouncement')
+    app.globalData.deferGuardianSosAnnouncement = !!uni.getStorageSync('deferGuardianSosAnnouncement')
+    app.globalData.playCrossingPrompt = playCrossingPrompt
     app.globalData.reconnectWs = connectWebSocket
   }
+  // eslint-disable-next-line
+  getApp.__$playCrossingPrompt = playCrossingPrompt
   // 尝试连接（如已登录）
   setTimeout(connectWebSocket, 500)
 })
 
 onShow(() => {
   console.log('App Show')
+  // eslint-disable-next-line
+  getApp.__$playCrossingPrompt = playCrossingPrompt
   // 前台回来后，确保 WS 在线
   if (!socketTask) connectWebSocket()
 })

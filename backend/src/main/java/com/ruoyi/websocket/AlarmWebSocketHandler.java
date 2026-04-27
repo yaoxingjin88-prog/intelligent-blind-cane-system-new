@@ -2,6 +2,7 @@ package com.ruoyi.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.entity.AlarmRecord;
+import com.ruoyi.entity.CrossingAssistSnapshot;
 import com.ruoyi.entity.FenceEvaluationResult;
 import com.ruoyi.entity.SensorData;
 import lombok.extern.slf4j.Slf4j;
@@ -118,6 +119,57 @@ public class AlarmWebSocketHandler extends TextWebSocketHandler {
         message.put("type", "FENCE_STATUS");
         message.put("deviceId", deviceId);
         message.put("fence", buildFencePayload(fenceEvaluationResult));
+        message.put("timestamp", System.currentTimeMillis());
+        sendToDevice(deviceId, message);
+    }
+
+    public void sendCrossingAssist(String deviceId, CrossingAssistSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        Map<String, Object> message = new HashMap<>();
+        message.put("type", "CROSSING_ASSIST");
+        message.put("deviceId", deviceId);
+        message.put("crossingAssist", snapshot);
+        message.put("message", snapshot.getMessage());
+        message.put("timestamp", System.currentTimeMillis());
+        sendToDevice(deviceId, message);
+    }
+
+    public void sendGuardianAlert(String deviceId, String alertType, String level, String messageText) {
+        sendGuardianAlert(deviceId, alertType, level, messageText, null);
+    }
+
+    public void sendGuardianAlert(String deviceId, String alertType, String level, String messageText, String locationText) {
+        Map<String, Object> message = new HashMap<>();
+        message.put("type", "GUARDIAN_ALERT");
+        message.put("deviceId", deviceId);
+        message.put("alertType", alertType);
+        message.put("level", level);
+        message.put("message", messageText);
+        if (locationText != null && !locationText.trim().isEmpty()) {
+            message.put("locationText", locationText);
+        }
+        message.put("timestamp", System.currentTimeMillis());
+        sendToDevice(deviceId, message);
+    }
+
+    public void sendGuardianComfort(String deviceId, String content) {
+        Map<String, Object> message = new HashMap<>();
+        message.put("type", "GUARDIAN_COMFORT");
+        message.put("deviceId", deviceId);
+        message.put("content", content);
+        message.put("message", content);
+        message.put("timestamp", System.currentTimeMillis());
+        sendToDevice(deviceId, message);
+    }
+
+    public void sendGuardianDestination(String deviceId, String destination, String messageText) {
+        Map<String, Object> message = new HashMap<>();
+        message.put("type", "GUARDIAN_DESTINATION");
+        message.put("deviceId", deviceId);
+        message.put("destination", destination);
+        message.put("message", messageText);
         message.put("timestamp", System.currentTimeMillis());
         sendToDevice(deviceId, message);
     }

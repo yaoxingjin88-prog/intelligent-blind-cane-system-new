@@ -14,4 +14,5 @@ public class BaiduSpeechConfig {
     private int ttsSpeed = 5;
     private int ttsPitch = 5;
     private int ttsVolume = 5;
+    private int timeoutSeconds = 60;
 }

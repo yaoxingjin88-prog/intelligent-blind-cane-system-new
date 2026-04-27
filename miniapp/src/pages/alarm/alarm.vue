@@ -1,5 +1,23 @@
 <template>
   <view class="alarm-page">
+    <view class="alarm-hero">
+      <view class="alarm-hero-copy">
+        <text class="hero-kicker">Alarm Center</text>
+        <text class="hero-title">安全提醒中心</text>
+        <text class="hero-desc">集中查看待处理告警、围栏越界与设备异常，及时完成守护反馈。</text>
+      </view>
+      <view class="hero-stats">
+        <view class="hero-stat pending">
+          <text class="hero-stat-label">待处理</text>
+          <text class="hero-stat-value">{{ unreadCount }}</text>
+        </view>
+        <view class="hero-stat handled">
+          <text class="hero-stat-label">已处理</text>
+          <text class="hero-stat-value">{{ handledCount }}</text>
+        </view>
+      </view>
+    </view>
+
     <!-- 标签切换 -->
     <view class="tab-bar">
       <view 
@@ -34,6 +52,11 @@
               <text class="alarm-title">{{ getAlarmTitle(alarm.alarmType) }}</text>
             </view>
             <text class="alarm-time">{{ formatRelativeTime(alarm.alarmTime) }}</text>
+          </view>
+
+          <view class="alarm-tags">
+            <text class="alarm-tag level" :class="alarm.level">{{ getLevelText(alarm.level) }}</text>
+            <text class="alarm-tag status" :class="alarm.status">{{ getStatusText(alarm.status) }}</text>
           </view>
           
           <!-- 第二行：描述 -->
@@ -86,6 +109,10 @@ const pageSize = 20
 // 未读数量
 const unreadCount = computed(() => {
   return alarms.value.filter(item => item.status === 'pending').length
+})
+
+const handledCount = computed(() => {
+  return alarms.value.filter(item => item.status === 'handled' || item.status === 'ignored').length
 })
 
 // 报警列表
@@ -270,6 +297,15 @@ const getStatusText = (status) => {
   return texts[status] || '未知'
 }
 
+const getLevelText = (level) => {
+  const texts = {
+    high: '高优先级',
+    medium: '中优先级',
+    low: '常规提醒'
+  }
+  return texts[level] || '提醒'
+}
+
 // 获取报警等级（支持中英文类型）
 const getAlarmLevel = (type) => {
   const highLevelTypes = ['fall', 'sos', '摔倒', '跌倒', 'sos']
@@ -291,16 +327,95 @@ const getEmptyText = () => {
 <style lang="scss" scoped>
 .alarm-page {
   min-height: 100vh;
-  background: #f7f8fa;
+  background: linear-gradient(180deg, #eef4ff 0%, #f8fafc 30%, #f4f7fb 100%);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
 }
 
-.tab-bar {
-  background: #ffffff;
+.alarm-hero {
+  margin: 24rpx 24rpx 20rpx;
+  padding: 30rpx;
+  border-radius: 30rpx;
+  background: linear-gradient(135deg, #081226 0%, #1d4ed8 56%, #14b8a6 100%);
+  box-shadow: 0 18rpx 36rpx rgba(29, 78, 216, 0.22);
+}
+
+.alarm-hero-copy {
   display: flex;
-  border-bottom: 1rpx solid #f3f4f6;
+  flex-direction: column;
+}
+
+.hero-kicker {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 20rpx;
+  letter-spacing: 2rpx;
+}
+
+.hero-title {
+  margin-top: 18rpx;
+  font-size: 40rpx;
+  line-height: 1.3;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.hero-desc {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.hero-stat {
+  padding: 20rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+}
+
+.hero-stat.pending {
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.hero-stat.handled {
+  background: rgba(34, 197, 94, 0.16);
+}
+
+.hero-stat-label {
+  display: block;
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.hero-stat-value {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.tab-bar {
+  margin: 0 24rpx 20rpx;
+  padding: 12rpx;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 24rpx;
+  box-shadow: 0 12rpx 24rpx rgba(15, 23, 42, 0.05);
   position: sticky;
   top: 0;
   z-index: 99;
@@ -308,24 +423,26 @@ const getEmptyText = () => {
   .tab-item {
     flex: 1;
     text-align: center;
-    padding: 24rpx 0;
-    font-size: 28rpx;
+    padding: 20rpx 0;
+    font-size: 26rpx;
     color: #6b7280;
     position: relative;
+    border-radius: 18rpx;
+    font-weight: 600;
 
     &.active {
-      color: #07c160;
-      font-weight: 600;
+      color: #2563eb;
+      background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
 
       &::after {
         content: '';
         position: absolute;
-        bottom: 0;
+        bottom: 8rpx;
         left: 50%;
         transform: translateX(-50%);
         width: 80rpx;
         height: 4rpx;
-        background: #07c160;
+        background: #2563eb;
         border-radius: 2rpx;
       }
     }
@@ -334,7 +451,7 @@ const getEmptyText = () => {
 
 .alarm-list {
   flex: 1;
-  padding: 32rpx;
+  padding: 0 24rpx 32rpx;
   width: 100%;
   box-sizing: border-box;
 }
@@ -359,16 +476,20 @@ const getEmptyText = () => {
 }
 
 .alarm-card {
-  background: #ffffff;
-  border-radius: 24rpx;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 28rpx;
   padding: 32rpx;
   margin-bottom: 24rpx;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.06);
-  border: 1rpx solid #f3f4f6;
+  box-shadow: 0 16rpx 32rpx rgba(15, 23, 42, 0.06);
+  border: 1rpx solid #e5e7eb;
   position: relative;
   overflow: hidden;
   width: 100%;
   box-sizing: border-box;
+
+  &:active {
+    transform: translateY(2rpx);
+  }
 
   .alarm-indicator {
     position: absolute;
@@ -394,7 +515,7 @@ const getEmptyText = () => {
   }
 
   .alarm-content {
-    padding-left: 16rpx;
+    padding-left: 18rpx;
   }
 
   .alarm-header {
@@ -409,13 +530,13 @@ const getEmptyText = () => {
       gap: 12rpx;
 
       .alarm-icon {
-        font-size: 32rpx;
+        font-size: 34rpx;
       }
 
       .alarm-title {
         font-size: 30rpx;
-        font-weight: 600;
-        color: #1f2937;
+        font-weight: 700;
+        color: #0f172a;
       }
     }
 
@@ -425,10 +546,57 @@ const getEmptyText = () => {
     }
   }
 
+  .alarm-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12rpx;
+    margin-bottom: 16rpx;
+
+    .alarm-tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6rpx 14rpx;
+      border-radius: 999rpx;
+      font-size: 20rpx;
+      font-weight: 700;
+    }
+
+    .alarm-tag.level.high {
+      background: rgba(239, 68, 68, 0.14);
+      color: #dc2626;
+    }
+
+    .alarm-tag.level.medium {
+      background: rgba(249, 115, 22, 0.14);
+      color: #ea580c;
+    }
+
+    .alarm-tag.level.low {
+      background: rgba(100, 116, 139, 0.14);
+      color: #475569;
+    }
+
+    .alarm-tag.status.pending {
+      background: rgba(239, 68, 68, 0.12);
+      color: #dc2626;
+    }
+
+    .alarm-tag.status.handled {
+      background: rgba(34, 197, 94, 0.12);
+      color: #15803d;
+    }
+
+    .alarm-tag.status.ignored {
+      background: rgba(148, 163, 184, 0.14);
+      color: #64748b;
+    }
+  }
+
   .alarm-desc {
     font-size: 26rpx;
-    color: #6b7280;
-    line-height: 1.5;
+    color: #64748b;
+    line-height: 1.7;
     margin-bottom: 20rpx;
     display: block;
   }
@@ -454,12 +622,12 @@ const getEmptyText = () => {
 
         &.ignore {
           background: #ffffff;
-          color: #6b7280;
+          color: #64748b;
           border: 1rpx solid #e5e7eb;
         }
 
         &.handle {
-          background: #07c160;
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
           color: #ffffff;
         }
       }
@@ -474,7 +642,7 @@ const getEmptyText = () => {
       }
 
       &.handled {
-        color: #07c160;
+        color: #16a34a;
       }
 
       &.ignored {

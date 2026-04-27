@@ -2,7 +2,9 @@ package com.ruoyi.controller;
 
 import com.ruoyi.entity.AlarmRecord;
 import com.ruoyi.entity.CaneDevice;
+import com.ruoyi.entity.CrossingAssistSnapshot;
 import com.ruoyi.entity.ElectronicFence;
+import com.ruoyi.entity.FenceEvaluationResult;
 import com.ruoyi.entity.Feedback;
 import com.ruoyi.entity.Guardian;
 import com.ruoyi.entity.Result;
@@ -10,29 +12,33 @@ import com.ruoyi.entity.SensorData;
 import com.ruoyi.entity.VisuallyImpairedUser;
 import com.ruoyi.service.AlarmRecordService;
 import com.ruoyi.service.CaneDeviceService;
+import com.ruoyi.service.CrossingAssistService;
 import com.ruoyi.service.ElectronicFenceService;
 import com.ruoyi.service.FeedbackService;
 import com.ruoyi.service.GuardianService;
-import com.ruoyi.service.SensorDataService;
 import com.ruoyi.service.VisuallyImpairedUserService;
 import com.ruoyi.mapper.ElectronicFenceMapper;
 import com.ruoyi.mapper.SensorDataMapper;
 import com.ruoyi.utils.JwtUtil;
+import com.ruoyi.websocket.AlarmWebSocketHandler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/mini")
 @Tag(name = "小程序接口", description = "小程序相关接口")
 public class MiniController {
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Autowired
     private GuardianService guardianService;
@@ -60,6 +66,12 @@ public class MiniController {
 
     @Autowired
     private VisuallyImpairedUserService visuallyImpairedUserService;
+
+    @Autowired
+    private CrossingAssistService crossingAssistService;
+
+    @Autowired
+    private AlarmWebSocketHandler alarmWebSocketHandler;
 
     private String extractToken(String token) {
         if (token == null) {
@@ -268,15 +280,11 @@ public class MiniController {
     public Result getDeviceStatus(@PathVariable String id) {
         try {
             Map<String, Object> status = new HashMap<>();
-            CaneDevice device = null;
-            try {
-                device = caneDeviceService.getDeviceById(Long.parseLong(id));
-            } catch (NumberFormatException ignored) {}
+            CaneDevice device = resolveDevice(id);
             if (device != null) {
-                status.put("status", device.getStatus());
-                status.put("batteryLevel", device.getBatteryLevel());
+                status.put("status", normalizeDeviceStatus(device.getStatus()));
+                status.put("batteryLevel", device.getBatteryLevel() != null ? device.getBatteryLevel() : 0);
             } else {
-                // 模拟数据
                 java.util.Random random = new java.util.Random();
                 status.put("status", "online");
                 status.put("batteryLevel", 60 + random.nextInt(40));
@@ -348,6 +356,131 @@ public class MiniController {
             return Result.success(data);
         } catch (Exception e) {
             return Result.error("获取传感器数据失败");
+        }
+    }
+
+    @Operation(summary = "获取家属守护概览", description = "获取家属远程协同守护卡片所需的概览数据")
+    @GetMapping("/devices/{deviceId}/guardian-care/overview")
+    public Result getGuardianCareOverview(@PathVariable String deviceId,
+                                          @RequestHeader(value = "Authorization", required = false) String token) {
+        try {
+            Guardian guardian = resolveGuardian(token);
+            return Result.success(buildGuardianCareOverview(deviceId, guardian));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("获取家属守护概览失败");
+        }
+    }
+
+    @Operation(summary = "发送家属安抚语音", description = "家属向设备端下发一条安抚文本，并由小程序端播放 TTS")
+    @PostMapping("/devices/{deviceId}/guardian-care/comfort")
+    public Result sendGuardianComfort(@PathVariable String deviceId, @RequestBody(required = false) Map<String, String> params) {
+        try {
+            String content = params == null ? null : params.get("content");
+            if (content == null || content.trim().isEmpty()) {
+                content = "别着急，家属正在关注你，请先在安全区域稍作等待。";
+            }
+            String normalized = content.trim();
+            alarmWebSocketHandler.sendGuardianComfort(deviceId, normalized);
+            Map<String, Object> result = new HashMap<>();
+            result.put("deviceId", deviceId);
+            result.put("content", normalized);
+            result.put("sentAt", LocalDateTime.now().format(DATE_TIME_FORMATTER));
+            return Result.success(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("发送安抚语音失败");
+        }
+    }
+
+    @Operation(summary = "发送家属目的地", description = "家属向设备端发送一个文本目的地，用于演示远程导航协同")
+    @PostMapping("/devices/{deviceId}/guardian-care/destination")
+    public Result sendGuardianDestination(@PathVariable String deviceId, @RequestBody Map<String, String> params) {
+        try {
+            String destination = params == null ? null : params.get("destination");
+            if (destination == null || destination.trim().isEmpty()) {
+                return Result.error("目的地不能为空");
+            }
+            String normalized = destination.trim();
+            String prompt = "家属已发送新的目的地：" + normalized + "。请按当前安全提醒继续前进。";
+            alarmWebSocketHandler.sendGuardianDestination(deviceId, normalized, prompt);
+            Map<String, Object> result = new HashMap<>();
+            result.put("deviceId", deviceId);
+            result.put("destination", normalized);
+            result.put("sentAt", LocalDateTime.now().format(DATE_TIME_FORMATTER));
+            return Result.success(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("发送目的地失败");
+        }
+    }
+
+    @Operation(summary = "用户端发起SOS求助", description = "用户端点击一键求助后，创建一条 SOS 报警并推送给家属端")
+    @PostMapping("/devices/{deviceId}/guardian-care/sos")
+    public Result triggerGuardianSos(@PathVariable String deviceId, @RequestBody(required = false) Map<String, String> params) {
+        try {
+            String locationText = params == null ? null : params.get("locationText");
+            String content = params == null ? null : params.get("content");
+            String normalizedContent = content == null || content.trim().isEmpty()
+                    ? "用户端已主动发起 SOS 求助，请立即查看最新位置并尽快联系。"
+                    : content.trim();
+            String normalizedLocation = locationText == null || locationText.trim().isEmpty()
+                    ? "当前位置待确认"
+                    : locationText.trim();
+
+            AlarmRecord alarmRecord = new AlarmRecord();
+            alarmRecord.setDeviceId(deviceId);
+            alarmRecord.setAlarmType("SOS求助");
+            alarmRecord.setAlarmTime(LocalDateTime.now().format(DATE_TIME_FORMATTER));
+            alarmRecord.setStatus("0");
+            alarmRecordService.addAlarmRecord(alarmRecord);
+
+            String guardianMessage = normalizedContent;
+            alarmWebSocketHandler.sendGuardianAlert(deviceId, "SOS", "danger", guardianMessage, normalizedLocation);
+            alarmWebSocketHandler.sendAlarmNotification(deviceId, alarmRecord);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("deviceId", deviceId);
+            result.put("alarmType", "SOS求助");
+            result.put("message", guardianMessage);
+            result.put("locationText", normalizedLocation);
+            result.put("sentAt", alarmRecord.getAlarmTime());
+            return Result.success(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("发起SOS求助失败");
+        }
+    }
+
+    @Operation(summary = "获取路口辅助结果", description = "获取设备最近一次路口安全辅助识别结果")
+    @GetMapping("/devices/{deviceId}/crossing-assist")
+    public Result<CrossingAssistSnapshot> getCrossingAssist(@PathVariable String deviceId) {
+        try {
+            return Result.success(crossingAssistService.getLatest(deviceId));
+        } catch (Exception e) {
+            return Result.error("获取路口辅助结果失败");
+        }
+    }
+
+    @Operation(summary = "上报路口辅助结果", description = "由视觉模块上报红绿灯、斑马线与车辆粗提醒结果")
+    @PostMapping("/devices/{deviceId}/crossing-assist")
+    public Result<CrossingAssistSnapshot> updateCrossingAssist(@PathVariable String deviceId,
+                                                               @RequestBody CrossingAssistSnapshot snapshot) {
+        try {
+            return Result.success(crossingAssistService.update(deviceId, snapshot));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("上报路口辅助结果失败");
+        }
+    }
+
+    @Operation(summary = "生成路口辅助演示结果", description = "生成一条演示用的路口辅助识别结果并推送")
+    @PostMapping("/devices/{deviceId}/crossing-assist/mock")
+    public Result<CrossingAssistSnapshot> mockCrossingAssist(@PathVariable String deviceId) {
+        try {
+            return Result.success(crossingAssistService.mock(deviceId));
+        } catch (Exception e) {
+            return Result.error("生成路口辅助演示结果失败");
         }
     }
 
@@ -768,6 +901,179 @@ public class MiniController {
         } catch (Exception e) {
             e.printStackTrace();
             return Result.error("模拟移动失败: " + e.getMessage());
+        }
+    }
+
+    private Guardian resolveGuardian(String token) {
+        if (token == null || token.trim().isEmpty()) {
+            return null;
+        }
+        String guardianId = jwtUtil.getUsernameFromToken(extractToken(token));
+        if (guardianId == null || guardianId.trim().isEmpty()) {
+            return null;
+        }
+        return guardianService.getGuardianById(Long.parseLong(guardianId));
+    }
+
+    private CaneDevice resolveDevice(String deviceRef) {
+        CaneDevice device = caneDeviceService.getDeviceByDeviceId(deviceRef);
+        if (device != null) {
+            return device;
+        }
+        try {
+            return caneDeviceService.getDeviceById(Long.parseLong(deviceRef));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private Map<String, Object> buildGuardianCareOverview(String deviceId, Guardian guardian) {
+        CaneDevice device = resolveDevice(deviceId);
+        SensorData latestSensor = sensorDataMapper.getLatestByDeviceId(deviceId);
+        FenceEvaluationResult fenceEvaluationResult = latestSensor == null ? null : electronicFenceService.evaluate(deviceId, latestSensor);
+        AlarmRecord latestAlarm = alarmRecordService.getLatestAlarm(deviceId);
+        List<SensorData> recentPoints = sensorDataMapper.getTrajectory(deviceId, 1);
+        Long stationaryMinutes = calculateStationaryMinutes(recentPoints);
+        boolean isFall = latestSensor != null && Boolean.TRUE.equals(latestSensor.getIsFall());
+        boolean isFenceTriggered = fenceEvaluationResult != null && Boolean.TRUE.equals(fenceEvaluationResult.getTriggered());
+        boolean isLowBattery = device != null && device.getBatteryLevel() != null && device.getBatteryLevel() <= 20;
+        boolean isInactive = stationaryMinutes != null && stationaryMinutes >= 20;
+        boolean isOffline = device == null || "offline".equals(normalizeDeviceStatus(device.getStatus()));
+
+        String statusKey = "normal";
+        String statusLevel = "safe";
+        String statusText = "守护中";
+        String statusDescription = "当前位置与设备状态均正常，家属可随时远程发起关怀。";
+        List<Map<String, Object>> tags = new ArrayList<>();
+
+        if (isFall) {
+            statusKey = "fall";
+            statusLevel = "danger";
+            statusText = "跌倒风险";
+            statusDescription = "检测到跌倒异常，建议家属尽快联系并确认现场情况。";
+            tags.add(buildGuardianTag("跌倒", "danger"));
+        } else if (isFenceTriggered) {
+            statusKey = "fence";
+            statusLevel = "danger";
+            statusText = "越界提醒";
+            statusDescription = "设备已离开守护区域，请关注最新位置并及时联系。";
+            tags.add(buildGuardianTag("越界", "danger"));
+        } else if (isLowBattery) {
+            statusKey = "low_battery";
+            statusLevel = "warning";
+            statusText = "低电量";
+            statusDescription = "设备电量不足，建议尽快返程或安排充电。";
+            tags.add(buildGuardianTag("低电量", "warning"));
+        } else if (isInactive) {
+            statusKey = "inactive";
+            statusLevel = "warning";
+            statusText = "静止偏久";
+            statusDescription = "设备已较长时间未移动，建议主动发送安抚语音确认情况。";
+            tags.add(buildGuardianTag("静止 " + stationaryMinutes + " 分钟", "warning"));
+        } else if (isOffline) {
+            statusKey = "offline";
+            statusLevel = "warning";
+            statusText = "连接中断";
+            statusDescription = "设备当前离线，请检查网络或设备开机状态。";
+            tags.add(buildGuardianTag("设备离线", "warning"));
+        } else {
+            tags.add(buildGuardianTag("守护正常", "safe"));
+        }
+
+        if (latestAlarm != null && latestAlarm.getAlarmType() != null && !latestAlarm.getAlarmType().trim().isEmpty()) {
+            tags.add(buildGuardianTag(latestAlarm.getAlarmType(), ("0".equals(latestAlarm.getStatus()) || "pending".equals(latestAlarm.getStatus())) ? "danger" : "neutral"));
+        }
+
+        Map<String, Object> overview = new HashMap<>();
+        overview.put("deviceId", deviceId);
+        overview.put("deviceName", device != null && device.getDeviceName() != null ? device.getDeviceName() : "智能盲杖");
+        overview.put("guardianName", guardian != null && guardian.getName() != null ? guardian.getName() : "家属");
+        overview.put("relation", guardian != null && guardian.getRelation() != null ? guardian.getRelation() : "监护人");
+        overview.put("elderName", device != null && device.getUserName() != null ? device.getUserName() : "老人");
+        overview.put("batteryLevel", device != null && device.getBatteryLevel() != null ? device.getBatteryLevel() : 0);
+        overview.put("online", !isOffline);
+        overview.put("locationText", formatLocationText(latestSensor));
+        overview.put("updateTime", latestSensor != null ? (latestSensor.getDataTime() != null ? latestSensor.getDataTime() : latestSensor.getCreateTime()) : "暂无更新");
+        overview.put("statusKey", statusKey);
+        overview.put("statusLevel", statusLevel);
+        overview.put("statusText", statusText);
+        overview.put("statusDescription", statusDescription);
+        overview.put("stationaryMinutes", stationaryMinutes != null ? stationaryMinutes : 0L);
+        overview.put("lastAlarmType", latestAlarm != null ? latestAlarm.getAlarmType() : "");
+        overview.put("lastAlarmTime", latestAlarm != null ? latestAlarm.getAlarmTime() : "");
+        overview.put("tags", tags);
+        if (latestSensor != null) {
+            overview.put("latitude", latestSensor.getLatitude());
+            overview.put("longitude", latestSensor.getLongitude());
+        }
+        return overview;
+    }
+
+    private String normalizeDeviceStatus(String status) {
+        if (status == null || status.trim().isEmpty()) {
+            return "offline";
+        }
+        String trimmed = status.trim();
+        if ("在线".equals(trimmed)) {
+            return "online";
+        }
+        if ("离线".equals(trimmed)) {
+            return "offline";
+        }
+        return trimmed.toLowerCase();
+    }
+
+    private Map<String, Object> buildGuardianTag(String label, String tone) {
+        Map<String, Object> tag = new HashMap<>();
+        tag.put("label", label);
+        tag.put("tone", tone);
+        return tag;
+    }
+
+    private String formatLocationText(SensorData latestSensor) {
+        if (latestSensor == null || latestSensor.getLatitude() == null || latestSensor.getLongitude() == null) {
+            return "暂无位置数据";
+        }
+        return String.format("%.4f, %.4f", latestSensor.getLatitude(), latestSensor.getLongitude());
+    }
+
+    private Long calculateStationaryMinutes(List<SensorData> points) {
+        if (points == null || points.size() < 3) {
+            return null;
+        }
+        SensorData first = points.get(0);
+        SensorData last = points.get(points.size() - 1);
+        LocalDateTime start = parseSensorTime(first.getDataTime() != null ? first.getDataTime() : first.getCreateTime());
+        LocalDateTime end = parseSensorTime(last.getDataTime() != null ? last.getDataTime() : last.getCreateTime());
+        if (start == null || end == null) {
+            return null;
+        }
+        long minutes = Math.max(0, Duration.between(start, end).toMinutes());
+        if (minutes < 20) {
+            return null;
+        }
+        if (first.getLatitude() == null || first.getLongitude() == null) {
+            return null;
+        }
+        for (SensorData point : points) {
+            if (point.getLatitude() == null || point.getLongitude() == null) {
+                return null;
+            }
+            if (calculateDistance(first.getLatitude(), first.getLongitude(), point.getLatitude(), point.getLongitude()) > 35) {
+                return null;
+            }
+        }
+        return minutes;
+    }
+
+    private LocalDateTime parseSensorTime(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(value, DATE_TIME_FORMATTER);
+        } catch (Exception ignored) {
+            return null;
         }
     }
 

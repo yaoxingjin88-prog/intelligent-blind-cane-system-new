@@ -179,6 +179,60 @@
               </div>
             </el-tab-pane>
 
+            <el-tab-pane label="路口辅助" name="crossing">
+              <div class="tab-content">
+                <div class="section-block">
+                  <div class="section-title">
+                    <span>路口辅助状态</span>
+                    <el-tag :type="crossingTagType" size="small">
+                      {{ crossingRecommendationLabel }}
+                    </el-tag>
+                  </div>
+                  <div class="section-actions">
+                    <el-button size="small" @click="refreshCrossingAssist">刷新结果</el-button>
+                    <el-button size="small" type="primary" @click="mockCrossingAssist">生成演示结果</el-button>
+                  </div>
+                  <div class="info-item">
+                    <label>红绿灯：</label>
+                    <span>{{ crossingTrafficLightLabel }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>斑马线：</label>
+                    <span>{{ crossingAssist.zebraCrossingDetected ? '已检测' : '未检测到' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>方向提示：</label>
+                    <span>{{ crossingDirectionLabel }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>车辆接近：</label>
+                    <span>{{ crossingAssist.vehicleApproaching ? '有车接近' : '未见接近车辆' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>识别置信度：</label>
+                    <span>{{ crossingConfidenceText }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>结果来源：</label>
+                    <span>{{ crossingAssist.source || '-' }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>更新时间：</label>
+                    <span>{{ crossingAssist.updateTime || '-' }}</span>
+                  </div>
+                </div>
+
+                <div class="section-block">
+                  <div class="section-title">
+                    <span>辅助提示文案</span>
+                  </div>
+                  <div class="crossing-message">
+                    {{ crossingAssist.message || '暂未收到路口辅助识别结果' }}
+                  </div>
+                </div>
+              </div>
+            </el-tab-pane>
+
             <el-tab-pane label="报警" name="alarm">
               <div class="tab-content">
                 <div class="section-block" v-if="latestAlarm">
@@ -234,6 +288,7 @@ const address = ref('')
 const showTrajectory = ref(false)
 const trajectoryData = ref<any[]>([])
 const latestAlarm = ref<any>(null)
+const crossingAssist = ref<any>({})
 const fence = ref<any>(null)
 const fenceList = ref<any[]>([])
 const currentFenceIndex = ref(0)
@@ -271,6 +326,71 @@ const fallConfidenceText = computed(() => {
   }
   return `${Math.round(Number(latestData.value.fallConfidence) * 100)}%`
 })
+
+const crossingTrafficLightLabel = computed(() => {
+  switch (String(crossingAssist.value?.trafficLightStatus || '').toUpperCase()) {
+    case 'RED':
+      return '红灯'
+    case 'GREEN':
+      return '绿灯'
+    case 'YELLOW':
+      return '黄灯'
+    default:
+      return '未知'
+  }
+})
+
+const crossingDirectionLabel = computed(() => {
+  switch (String(crossingAssist.value?.zebraCrossingDirection || '').toUpperCase()) {
+    case 'LEFT':
+      return '偏左'
+    case 'RIGHT':
+      return '偏右'
+    case 'CENTER':
+      return '居中'
+    default:
+      return '未知'
+  }
+})
+
+const crossingRecommendationLabel = computed(() => {
+  switch (crossingAssist.value?.recommendation) {
+    case 'WAIT':
+      return '建议等待'
+    case 'PROCEED_CAUTION':
+      return '谨慎通行'
+    case 'ALIGN_FIRST':
+      return '先校准方向'
+    case 'SEARCH_ZEBRA':
+      return '寻找斑马线'
+    default:
+      return '等待识别'
+  }
+})
+
+const crossingTagType = computed(() => {
+  switch (crossingAssist.value?.recommendation) {
+    case 'WAIT':
+      return 'danger'
+    case 'PROCEED_CAUTION':
+      return 'success'
+    case 'ALIGN_FIRST':
+      return 'warning'
+    default:
+      return 'info'
+  }
+})
+
+const crossingConfidenceText = computed(() => {
+  if (crossingAssist.value?.confidence == null) {
+    return '-'
+  }
+  return `${Math.round(Number(crossingAssist.value.confidence) * 100)}%`
+})
+
+const applyCrossingAssist = (payload: any) => {
+  crossingAssist.value = payload || {}
+}
 
 // WebSocket
 let ws: WebSocket | null = null
@@ -441,6 +561,59 @@ const loadDeviceInfo = async () => {
     }
   } catch (error) {
     console.error('获取设备信息失败', error)
+  }
+}
+
+const loadCrossingAssist = async () => {
+  if (!deviceInfo.value?.deviceId) return
+  try {
+    const response = await axios.get(`/api/mini/devices/${deviceInfo.value.deviceId}/crossing-assist`, {
+      params: { _t: Date.now() }
+    })
+    if (response.data.code === 200) {
+      applyCrossingAssist(response.data.data)
+    }
+  } catch (error) {
+    console.error('获取路口辅助结果失败', error)
+  }
+}
+
+const refreshCrossingAssist = async () => {
+  if (!deviceInfo.value?.deviceId) {
+    ElMessage.warning('设备信息未加载完成')
+    return
+  }
+  try {
+    if (crossingAssist.value?.source === 'mock-demo') {
+      const response = await axios.post(`/api/mini/devices/${deviceInfo.value.deviceId}/crossing-assist/mock`)
+      if (response.data.code === 200) {
+        applyCrossingAssist(response.data.data)
+        ElMessage.success('已切换演示场景')
+      }
+      return
+    }
+    await loadCrossingAssist()
+    ElMessage.success('已刷新路口辅助结果')
+  } catch (error) {
+    console.error('刷新路口辅助结果失败', error)
+    ElMessage.error('刷新路口辅助结果失败')
+  }
+}
+
+const mockCrossingAssist = async () => {
+  if (!deviceInfo.value?.deviceId) {
+    ElMessage.warning('设备信息未加载完成')
+    return
+  }
+  try {
+    const response = await axios.post(`/api/mini/devices/${deviceInfo.value.deviceId}/crossing-assist/mock`)
+    if (response.data.code === 200) {
+      applyCrossingAssist(response.data.data)
+      ElMessage.success('已生成演示结果')
+    }
+  } catch (error) {
+    console.error('生成演示结果失败', error)
+    ElMessage.error('生成演示结果失败')
   }
 }
 
@@ -738,6 +911,8 @@ const connectWebSocket = () => {
       showAlarmNotification(message.alarm)
     } else if (message.type === 'FENCE_STATUS') {
       applyFenceStatus(message.fence)
+    } else if (message.type === 'CROSSING_ASSIST') {
+      applyCrossingAssist(message.crossingAssist)
     } else if (message.type === 'CONNECTED') {
       console.log('服务器确认连接:', message.message)
     } else if (message.type === 'PONG') {
@@ -762,6 +937,7 @@ onMounted(async () => {
   initMap()
   await loadDeviceInfo()
   await refreshLocation()
+  await loadCrossingAssist()
   await loadFence()
   if (!fence.value && latestData.value?.latitude && latestData.value?.longitude) {
     fenceForm.value.centerLatitude = latestData.value.latitude
@@ -776,6 +952,7 @@ onMounted(async () => {
   refreshTimer = setInterval(() => {
     refreshLocation()
     checkLatestAlarm()
+    loadCrossingAssist()
   }, 30000)
 })
 
@@ -941,6 +1118,13 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 
+.section-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
 .alarm-header {
   color: #F56C6C;
 }
@@ -995,6 +1179,15 @@ onUnmounted(() => {
 
 .alarm-content p {
   margin: 8px 0;
+}
+
+.crossing-message {
+  line-height: 1.8;
+  color: #374151;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  padding: 14px 16px;
 }
 
 .fence-form-row {

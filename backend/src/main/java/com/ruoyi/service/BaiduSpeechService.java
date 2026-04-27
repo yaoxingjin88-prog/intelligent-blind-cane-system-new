@@ -18,6 +18,7 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -42,6 +43,23 @@ public class BaiduSpeechService {
     private volatile String cachedToken = null;
     private volatile long tokenExpireAt = 0L;
 
+    private HttpClient buildHttpClient() {
+        return HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(config.getTimeoutSeconds()))
+                .build();
+    }
+
+    private String previewText(String text) {
+        if (text == null) {
+            return "";
+        }
+        String normalized = text.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= 32) {
+            return normalized;
+        }
+        return normalized.substring(0, 32) + "...";
+    }
+
     /**
      * 获取并缓存百度 access_token（有效期 30 天）
      */
@@ -53,25 +71,34 @@ public class BaiduSpeechService {
                 + "&client_id=" + URLEncoder.encode(config.getApiKey(), StandardCharsets.UTF_8)
                 + "&client_secret=" + URLEncoder.encode(config.getSecretKey(), StandardCharsets.UTF_8);
 
-        HttpClient client = HttpClient.newHttpClient();
+        long startedAt = System.currentTimeMillis();
+        HttpClient client = buildHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(10))
+                .timeout(Duration.ofSeconds(config.getTimeoutSeconds()))
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build();
-        HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> resp;
+        try {
+            resp = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (HttpTimeoutException e) {
+            log.error("获取百度 access_token 超时: timeout={}s", config.getTimeoutSeconds(), e);
+            throw new RuntimeException("获取百度 access_token 超时");
+        }
+        long elapsedMs = System.currentTimeMillis() - startedAt;
         if (resp.statusCode() >= 400) {
+            log.error("获取百度 access_token 失败: status={}, elapsed={}ms, body={}", resp.statusCode(), elapsedMs, resp.body());
             throw new RuntimeException("获取百度 access_token 失败: " + resp.body());
         }
         JsonNode node = mapper.readTree(resp.body());
         if (node.has("error")) {
+            log.error("百度 token 返回业务错误: elapsed={}ms, body={}", elapsedMs, resp.body());
             throw new RuntimeException("百度 token 错误: " + resp.body());
         }
         cachedToken = node.path("access_token").asText();
         long expiresInSec = node.path("expires_in").asLong(2592000L);
-        // 提前 1 小时过期避免边界
         tokenExpireAt = System.currentTimeMillis() + (expiresInSec - 3600) * 1000L;
-        log.info("已获取百度 access_token，有效期 {} 秒", expiresInSec);
+        log.info("已获取百度 access_token: elapsed={}ms, expiresIn={}s", elapsedMs, expiresInSec);
         return cachedToken;
     }
 
@@ -110,15 +137,21 @@ public class BaiduSpeechService {
         body.put("len", pcmBytes.length);
 
         String json = mapper.writeValueAsString(body);
-        HttpClient client = HttpClient.newHttpClient();
+        HttpClient client = buildHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("https://vop.baidu.com/server_api"))
-                .timeout(Duration.ofSeconds(30))
+                .timeout(Duration.ofSeconds(config.getTimeoutSeconds()))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
                 .build();
 
-        HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> resp;
+        try {
+            resp = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (HttpTimeoutException e) {
+            log.error("百度 STT 请求超时: timeout={}s, format={}, rate={}, bytes={}", config.getTimeoutSeconds(), realFormat, realRate, pcmBytes.length, e);
+            throw new RuntimeException("语音识别请求超时");
+        }
         JsonNode node = mapper.readTree(resp.body());
         int errNo = node.path("err_no").asInt(-1);
         if (errNo != 0) {
@@ -144,10 +177,10 @@ public class BaiduSpeechService {
         // 文本 utf-8 长度限制：百度 TTS 单次 1024 字节
         byte[] textBytes = text.getBytes(StandardCharsets.UTF_8);
         if (textBytes.length > 1024) {
-            // 截断到 1020 字节附近并保证字符完整
             text = new String(textBytes, 0, 1020, StandardCharsets.UTF_8);
         }
 
+        long startedAt = System.currentTimeMillis();
         String token = getAccessToken();
         String form = "tex=" + URLEncoder.encode(text, StandardCharsets.UTF_8)
                 + "&tok=" + URLEncoder.encode(token, StandardCharsets.UTF_8)
@@ -158,27 +191,37 @@ public class BaiduSpeechService {
                 + "&pit=" + config.getTtsPitch()
                 + "&vol=" + config.getTtsVolume()
                 + "&per=" + config.getTtsVoice()
-                + "&aue=3"; // 3=mp3
+                + "&aue=3";
 
-        HttpClient client = HttpClient.newHttpClient();
+        log.info("开始百度 TTS: timeout={}s, textBytes={}, preview={}", config.getTimeoutSeconds(), text.getBytes(StandardCharsets.UTF_8).length, previewText(text));
+
+        HttpClient client = buildHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("https://tsn.baidu.com/text2audio"))
-                .timeout(Duration.ofSeconds(30))
+                .timeout(Duration.ofSeconds(config.getTimeoutSeconds()))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(form, StandardCharsets.UTF_8))
                 .build();
 
-        HttpResponse<byte[]> resp = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        HttpResponse<byte[]> resp;
+        try {
+            resp = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        } catch (HttpTimeoutException e) {
+            log.error("百度 TTS 请求超时: timeout={}s, preview={}", config.getTimeoutSeconds(), previewText(text), e);
+            throw new RuntimeException("语音合成请求超时");
+        }
+        long elapsedMs = System.currentTimeMillis() - startedAt;
         if (resp.statusCode() >= 400) {
+            log.error("百度 TTS HTTP 错误: status={}, elapsed={}ms, preview={}", resp.statusCode(), elapsedMs, previewText(text));
             throw new RuntimeException("百度 TTS HTTP 错误: " + resp.statusCode());
         }
-        // 判断返回是否是 JSON 错误
         String contentType = resp.headers().firstValue("Content-Type").orElse("");
         if (contentType.contains("json")) {
             String errBody = new String(resp.body(), StandardCharsets.UTF_8);
-            log.error("百度 TTS 错误: {}", errBody);
+            log.error("百度 TTS 业务错误: elapsed={}ms, preview={}, body={}", elapsedMs, previewText(text), errBody);
             throw new RuntimeException("语音合成失败: " + errBody);
         }
+        log.info("百度 TTS 成功: elapsed={}ms, audioBytes={}, contentType={}, preview={}", elapsedMs, resp.body().length, contentType, previewText(text));
         return resp.body();
     }
 
