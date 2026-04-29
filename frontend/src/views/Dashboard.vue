@@ -344,7 +344,6 @@ const handleResize = () => {
   activityChart?.resize()
   batteryChart?.resize()
   alarmChart?.resize()
-  map?.resize()
 }
 
 onMounted(async () => {

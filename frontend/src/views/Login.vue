@@ -276,6 +276,20 @@ export default {
   line-height: 1.6;
 }
 
+.demo-account-tip {
+  margin-top: 16px;
+}
+
+.demo-account-tip :deep(.el-alert__content) {
+  padding-left: 8px;
+}
+
+.demo-account-tip :deep(.el-alert__description) {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .login-info {
   margin-top: 28px;
   text-align: center;
