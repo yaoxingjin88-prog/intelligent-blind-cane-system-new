@@ -44,6 +44,19 @@
               <el-checkbox v-model="rememberMe">记住密码</el-checkbox>
               <el-button type="text" @click="handleForgotPassword">忘记密码？</el-button>
             </div>
+            <div class="demo-account-tip">
+              <el-alert
+                title="演示账号"
+                type="info"
+                :closable="false"
+                show-icon
+              >
+                <template #default>
+                  <div>用户名：admin</div>
+                  <div>密码：123456</div>
+                </template>
+              </el-alert>
+            </div>
           </el-form>
         </div>
       </el-card>
@@ -247,6 +260,20 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-top: 16px;
+}
+  
+.demo-account-tip {
+  margin-top: 16px;
+}
+
+.demo-account-tip :deep(.el-alert__content) {
+  padding-left: 8px;
+}
+
+.demo-account-tip :deep(.el-alert__description) {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .login-info {
