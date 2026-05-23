@@ -276,8 +276,8 @@ const activePanel = ref('device')
 
 // 地图相关
 const DEFAULT_LOCATION = {
-  longitude: 116.79,
-  latitude: 36.54
+  longitude: 116.78575,
+  latitude: 36.531339
 }
 let map: any = null
 let marker: any = null
