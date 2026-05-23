@@ -275,6 +275,10 @@ const deviceId = ref(route.params.deviceId as string)
 const activePanel = ref('device')
 
 // 地图相关
+const DEFAULT_LOCATION = {
+  longitude: 116.78681182068674,
+  latitude: 36.53136406342377
+}
 let map: any = null
 let marker: any = null
 let trajectoryLine: any = null
@@ -427,7 +431,7 @@ const initMap = () => {
   
   map = new window.AMap.Map('map-container', {
     zoom: 15,
-    center: [116.397428, 39.90923], // 默认北京天安门
+    center: [116.78681182068674, 36.53136406342377],
     viewMode: '2D'
   })
   
@@ -769,24 +773,45 @@ const saveFence = async () => {
 const refreshLocation = async () => {
   if (!deviceInfo.value?.deviceId) return
   try {
-    const response = await axios.get(`/api/sensor-data/latest`, {
+    const sensorResponse = await axios.get(`/api/sensor-data/latest`, {
       params: {
         deviceId: deviceInfo.value?.deviceId,
         _t: Date.now()
       }
     })
-    if (response.data.code === 200) {
-      latestData.value = response.data.data
+    if (sensorResponse.data.code === 200) {
+      latestData.value = sensorResponse.data.data || {}
       deviceStatus.value = '在线'
-      
-      // 更新地图
-      if (latestData.value?.longitude && latestData.value?.latitude) {
-        updateMapMarker(latestData.value.longitude, latestData.value.latitude)
+    }
+
+    const locationResponse = await axios.get(`/api/mini/devices/${deviceInfo.value.deviceId}/location`, {
+      params: { _t: Date.now() }
+    })
+    if (locationResponse.data.code === 200 && locationResponse.data.data?.longitude && locationResponse.data.data?.latitude) {
+      const location = locationResponse.data.data
+      latestData.value = {
+        ...latestData.value,
+        longitude: location.longitude,
+        latitude: location.latitude,
+        createTime: location.updateTime || latestData.value?.createTime
       }
+      updateMapMarker(Number(location.longitude), Number(location.latitude))
+    } else {
+      latestData.value = {
+        ...latestData.value,
+        longitude: DEFAULT_LOCATION.longitude,
+        latitude: DEFAULT_LOCATION.latitude
+      }
+      updateMapMarker(DEFAULT_LOCATION.longitude, DEFAULT_LOCATION.latitude)
     }
   } catch (error) {
     console.error('刷新位置失败', error)
-    deviceStatus.value = '离线'
+    latestData.value = {
+      ...latestData.value,
+      longitude: DEFAULT_LOCATION.longitude,
+      latitude: DEFAULT_LOCATION.latitude
+    }
+    updateMapMarker(DEFAULT_LOCATION.longitude, DEFAULT_LOCATION.latitude)
   }
 }
 
@@ -851,8 +876,21 @@ const playAlarmSound = () => {
   const now = Date.now()
   if (now - lastAlarmSoundAt < ALARM_NOTIFICATION_COOLDOWN_MS) return
   lastAlarmSoundAt = now
-  const audio = new Audio('/alarm.mp3') // 需要准备音频文件
-  audio.play().catch(err => console.log('播放音效失败', err))
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+  if (!AudioContextClass) return
+  const audioContext = new AudioContextClass()
+  const oscillator = audioContext.createOscillator()
+  const gainNode = audioContext.createGain()
+  oscillator.type = 'sine'
+  oscillator.frequency.value = 880
+  gainNode.gain.value = 0.15
+  oscillator.connect(gainNode)
+  gainNode.connect(audioContext.destination)
+  oscillator.start()
+  setTimeout(() => {
+    oscillator.stop()
+    audioContext.close()
+  }, 300)
 }
 
 // 处理报警
@@ -876,7 +914,9 @@ const connectWebSocket = () => {
   const wsDeviceId = deviceInfo.value?.deviceId
   if (!wsDeviceId) return
   if (isPageUnmounted) return
-  const wsUrl = `ws://localhost:8081/ws/alarm?deviceId=${wsDeviceId}`
+  const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL
+    || (import.meta.env.DEV ? 'ws://localhost:8081' : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`)
+  const wsUrl = `${wsBaseUrl}/ws/alarm?deviceId=${wsDeviceId}`
 
   if (ws) {
     ws.close()
@@ -897,9 +937,7 @@ const connectWebSocket = () => {
     if (message.type === 'SENSOR_DATA') {
       latestData.value = message.sensorData
       deviceStatus.value = '在线'
-      if (latestData.value?.longitude && latestData.value?.latitude) {
-        updateMapMarker(latestData.value.longitude, latestData.value.latitude)
-      }
+      refreshLocation()
       if (showTrajectory.value) {
         loadTrajectory()
       }
@@ -1259,3 +1297,4 @@ onUnmounted(() => {
   }
 }
 </style>
+
