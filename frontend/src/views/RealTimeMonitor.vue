@@ -276,8 +276,8 @@ const activePanel = ref('device')
 
 // 地图相关
 const DEFAULT_LOCATION = {
-  longitude: 116.78575,
-  latitude: 36.731339
+  longitude: 116.7849,
+  latitude: 36.5300
 }
 let map: any = null
 let marker: any = null
@@ -431,7 +431,7 @@ const initMap = () => {
   
   map = new window.AMap.Map('map-container', {
     zoom: 15,
-    center: [116.78681182068674, 36.53136406342377],
+    center: [116.7849, 36.5300],
     viewMode: '2D'
   })
   
@@ -1297,4 +1297,3 @@ onUnmounted(() => {
   }
 }
 </style>
-
