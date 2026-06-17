@@ -3,6 +3,10 @@
     {
       "source": "/api/(.*)",
       "destination": "http://47.104.213.140:8081/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ],
   "headers": [

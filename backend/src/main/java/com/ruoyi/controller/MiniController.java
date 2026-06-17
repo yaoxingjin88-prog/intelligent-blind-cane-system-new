@@ -24,6 +24,7 @@ import com.ruoyi.websocket.AlarmWebSocketHandler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
@@ -39,6 +40,15 @@ import java.util.Map;
 @Tag(name = "小程序接口", description = "小程序相关接口")
 public class MiniController {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    @Value("${demo.location.force:false}")
+    private Boolean demoLocationForce;
+
+    @Value("${demo.location.latitude:39.9042}")
+    private Double demoLocationLatitude;
+
+    @Value("${demo.location.longitude:116.4074}")
+    private Double demoLocationLongitude;
 
     @Autowired
     private GuardianService guardianService;
@@ -304,14 +314,18 @@ public class MiniController {
 
             // 从 sensor_data 表读取该设备最新一条有 GPS 的记录
             SensorData latest = sensorDataMapper.getLatestByDeviceId(id);
-            if (latest != null && latest.getLatitude() != null && latest.getLongitude() != null) {
+            if (Boolean.TRUE.equals(demoLocationForce)) {
+                location.put("latitude", demoLocationLatitude);
+                location.put("longitude", demoLocationLongitude);
+                location.put("updateTime", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
+            } else if (latest != null && latest.getLatitude() != null && latest.getLongitude() != null) {
                 location.put("latitude", latest.getLatitude());
                 location.put("longitude", latest.getLongitude());
                 location.put("updateTime", latest.getDataTime() != null ? latest.getDataTime() : latest.getCreateTime());
             } else {
                 // 没有传感器数据时返回默认位置
-                location.put("latitude", 39.9042);
-                location.put("longitude", 116.4074);
+                location.put("latitude", demoLocationLatitude);
+                location.put("longitude", demoLocationLongitude);
                 location.put("updateTime", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
             }
             location.put("address", "");
