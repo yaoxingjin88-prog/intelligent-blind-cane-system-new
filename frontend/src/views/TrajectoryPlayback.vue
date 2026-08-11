@@ -112,6 +112,9 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
+import { ensureAmap } from '../utils/amap'
+
+defineOptions({ name: 'TrajectoryPlayback' })
 
 const route = useRoute()
 const mapContainerRef = ref(null)
@@ -273,7 +276,14 @@ const renderTrajectory = () => {
   updatePlaybackOverlay(true)
 }
 
-const initMap = () => {
+const initMap = async () => {
+  try {
+    await ensureAmap()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('高德地图加载失败')
+    return
+  }
   if (!window.AMap || !mapContainerRef.value || map) return
   map = new window.AMap.Map(mapContainerRef.value, {
     zoom: 13,
@@ -380,7 +390,7 @@ watch(playbackSpeed, () => {
 })
 
 onMounted(async () => {
-  initMap()
+  await initMap()
   await fetchDevices()
   if (selectedDeviceId.value) {
     loadTrajectory()

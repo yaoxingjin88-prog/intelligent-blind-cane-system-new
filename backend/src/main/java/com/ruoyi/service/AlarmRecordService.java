@@ -16,6 +16,19 @@ public class AlarmRecordService {
         return alarmRecordMapper.getAllAlarmRecords();
     }
 
+    public List<AlarmRecord> getUnhandledAlarmRecords() {
+        return alarmRecordMapper.getUnhandledAlarmRecords();
+    }
+
+    public List<AlarmRecord> getRecentAlarmRecords(Integer limit) {
+        int normalized = limit == null ? 200 : Math.max(1, Math.min(limit, 1000));
+        return alarmRecordMapper.getRecentAlarmRecords(normalized);
+    }
+
+    public List<AlarmRecord> getLatestAlarmForAllDevices() {
+        return alarmRecordMapper.getLatestForAllDevices();
+    }
+
     public int countAllAlarmRecords() {
         return alarmRecordMapper.countAll();
     }

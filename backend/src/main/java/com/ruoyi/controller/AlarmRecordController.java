@@ -18,10 +18,19 @@ public class AlarmRecordController {
     @Autowired
     private AlarmRecordService alarmRecordService;
 
-    @Operation(summary = "获取所有告警记录", description = "获取系统中所有告警记录的信息")
+    @Operation(summary = "获取所有告警记录", description = "默认返回最近若干条；header=true 时仅返回未处理告警")
     @GetMapping
-    public Result<List<AlarmRecord>> getAllAlarmRecords() {
-        return Result.success(alarmRecordService.getAllAlarmRecords());
+    public Result<List<AlarmRecord>> getAllAlarmRecords(
+            @RequestParam(required = false, defaultValue = "200") Integer limit,
+            @RequestParam(required = false, defaultValue = "false") Boolean all,
+            @RequestParam(required = false, defaultValue = "false") Boolean unhandledOnly) {
+        if (Boolean.TRUE.equals(unhandledOnly)) {
+            return Result.success(alarmRecordService.getUnhandledAlarmRecords());
+        }
+        if (Boolean.TRUE.equals(all)) {
+            return Result.success(alarmRecordService.getAllAlarmRecords());
+        }
+        return Result.success(alarmRecordService.getRecentAlarmRecords(limit));
     }
 
     @Operation(summary = "获取告警记录总数", description = "获取系统当前告警记录总条数")

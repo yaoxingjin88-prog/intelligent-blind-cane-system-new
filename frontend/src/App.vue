@@ -127,7 +127,11 @@
 
         <!-- 主内容区 -->
         <main class="main-content">
-          <router-view />
+          <router-view v-slot="{ Component }">
+            <keep-alive :include="cachedViews" :max="8">
+              <component :is="Component" />
+            </keep-alive>
+          </router-view>
         </main>
       </div>
     </div>
@@ -139,7 +143,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { House, User, Monitor, DataAnalysis, Bell, Guide, Fold, Expand, BellFilled, Setting, SwitchButton, ArrowDown } from '@element-plus/icons-vue'
 
@@ -156,6 +160,16 @@ export default {
     const isCollapse = ref(false)
     const currentUser = ref(JSON.parse(localStorage.getItem('user') || '{}'))
     const headerAlarmRecords = ref([])
+    const cachedViews = [
+      'Dashboard',
+      'Users',
+      'Devices',
+      'MonitoringCenter',
+      'Fences',
+      'TrajectoryPlayback',
+      'SensorData',
+      'AlarmRecords'
+    ]
     let alarmPollTimer = null
 
     const menuNameMap = {
@@ -176,8 +190,6 @@ export default {
       return menuNameMap[activeMenu.value] || '概览'
     }
 
-    const isUnhandledAlarm = (status) => String(status) === '0' || status === '未处理'
-
     const getAlarmTagType = (alarmType) => {
       if (!alarmType) return 'info'
       if (String(alarmType).includes('跌倒')) return 'danger'
@@ -192,16 +204,18 @@ export default {
         return
       }
       try {
-        const response = await fetch('/api/alarm-records', {
+        const response = await fetch('/api/alarm-records?unhandledOnly=true', {
           cache: 'no-cache'
         })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
         const data = await response.json()
         headerAlarmRecords.value = (data.data || [])
-          .filter(record => isUnhandledAlarm(record.status))
           .sort((a, b) => String(b.alarmTime || '').localeCompare(String(a.alarmTime || '')))
       } catch (error) {
         console.error('获取顶部告警通知失败:', error)
-        headerAlarmRecords.value = []
+        // 失败时保留上一次数据，避免切页后铃铛被清空成“没数据”
       }
     }
 
@@ -229,40 +243,29 @@ export default {
       router.push('/login')
     }
 
+    const syncActiveMenu = (path) => {
+      activeMenu.value = path.startsWith('/monitor/') ? '/monitor-center' : path
+    }
+
     onMounted(() => {
-      activeMenu.value = router.currentRoute.value.path
+      syncActiveMenu(router.currentRoute.value.path)
+      checkLoginStatus()
       fetchHeaderNotifications()
-      
-      // 监听路由变化，检查登录状态
-      router.beforeEach((to, from, next) => {
-        // 检查是否已登录
-        checkLoginStatus()
-        
-        // 不需要登录的页面
-        if (to.path === '/login') {
-          activeMenu.value = to.path
-          next()
-          return
-        }
-        
-        // 需要登录的页面
-        if (!isLoggedIn.value) {
-          next('/login')
-          return
-        }
-        
-        activeMenu.value = to.path
-        next()
-      })
 
       alarmPollTimer = window.setInterval(() => {
         fetchHeaderNotifications()
-      }, 15000)
+      }, 30000)
       
       // 监听localStorage变化
       window.addEventListener('storage', checkLoginStatus)
       // 监听告警变更事件，立即刷新铃铛
       window.addEventListener('alarm-records-changed', fetchHeaderNotifications)
+    })
+
+    // 用 watch 同步菜单高亮，避免重复注册 beforeEach
+    watch(() => router.currentRoute.value.path, (path) => {
+      checkLoginStatus()
+      syncActiveMenu(path)
     })
 
     onUnmounted(() => {
@@ -286,15 +289,14 @@ export default {
       getAlarmTagType,
       fetchHeaderNotifications,
       goToAlarmRecords,
-      logout
+      logout,
+      cachedViews
     }
   }
 }
 </script>
 
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
 * {
   margin: 0;
   padding: 0;
@@ -305,7 +307,7 @@ html, body, #app {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
 }
 
 .app-container {

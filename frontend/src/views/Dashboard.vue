@@ -129,10 +129,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref } from 'vue'
 import axios from 'axios'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
+import { ensureAmap } from '../utils/amap'
+
+defineOptions({ name: 'Dashboard' })
 
 const overview = ref<any>({})
 const activityTrend = ref<any[]>([])
@@ -248,7 +251,8 @@ const updateCharts = () => {
   })
 }
 
-const initMap = () => {
+const initMap = async () => {
+  await ensureAmap()
   if (!window.AMap || !mapContainer.value || map) return
   map = new window.AMap.Map(mapContainer.value, {
     zoom: 12,
@@ -258,6 +262,7 @@ const initMap = () => {
   map.addControl(new window.AMap.Scale())
   map.addControl(new window.AMap.ToolBar())
   window.AMap.plugin(['AMap.Heatmap'], () => {
+    if (!map) return
     heatmap = new window.AMap.Heatmap(map, {
       radius: 28,
       opacity: [0, 0.85],
@@ -349,6 +354,12 @@ const handleResize = () => {
 onMounted(async () => {
   await loadDashboard()
   window.addEventListener('resize', handleResize)
+})
+
+onActivated(() => {
+  handleResize()
+  // 从缓存切回时刷新一次，避免展示过期空数据
+  loadDashboard()
 })
 
 onUnmounted(() => {

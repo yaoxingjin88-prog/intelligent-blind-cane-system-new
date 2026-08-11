@@ -12,6 +12,15 @@ public interface AlarmRecordMapper {
     @Select("SELECT id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, status FROM alarm_record")
     List<AlarmRecord> getAllAlarmRecords();
 
+    @Select("SELECT id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, status FROM alarm_record WHERE status = '0' OR status = '未处理' ORDER BY alarm_time DESC")
+    List<AlarmRecord> getUnhandledAlarmRecords();
+
+    @Select("SELECT id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, status FROM alarm_record ORDER BY alarm_time DESC, id DESC LIMIT #{limit}")
+    List<AlarmRecord> getRecentAlarmRecords(@Param("limit") Integer limit);
+
+    @Select("SELECT id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, status FROM (SELECT id, device_id, alarm_type, alarm_time, status, ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY alarm_time DESC, id DESC) AS rn FROM alarm_record) ranked WHERE ranked.rn = 1")
+    List<AlarmRecord> getLatestForAllDevices();
+
     @Select("SELECT id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, status FROM alarm_record WHERE id = #{id}")
     AlarmRecord getAlarmRecordById(Long id);
 

@@ -170,6 +170,9 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import axios from 'axios'
+import { ensureAmap } from '../utils/amap'
+
+defineOptions({ name: 'Fences' })
 
 const router = useRouter()
 const devices = ref([])
@@ -330,6 +333,13 @@ const centerFenceMapOnCurrentValue = () => {
 const initFenceMap = async () => {
   if (!dialogVisible.value) return
   await nextTick()
+  try {
+    await ensureAmap()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('高德地图加载失败')
+    return
+  }
   if (!window.AMap || !fenceMapContainerRef.value) return
   if (!fenceMap) {
     fenceMap = new window.AMap.Map(fenceMapContainerRef.value, {

@@ -268,6 +268,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElNotification } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import axios from 'axios'
+import { ensureAmap } from '../utils/amap'
+
+defineOptions({ name: 'RealTimeMonitor' })
 
 const route = useRoute()
 const router = useRouter()
@@ -423,7 +426,14 @@ const getBatteryClass = (battery: number) => {
 }
 
 // 初始化高德地图
-const initMap = () => {
+const initMap = async () => {
+  try {
+    await ensureAmap()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('高德地图API加载失败')
+    return
+  }
   if (!window.AMap) {
     ElMessage.error('高德地图API加载失败')
     return
@@ -972,7 +982,7 @@ const connectWebSocket = () => {
 // 页面加载
 onMounted(async () => {
   isPageUnmounted = false
-  initMap()
+  await initMap()
   await loadDeviceInfo()
   await refreshLocation()
   await loadCrossingAssist()

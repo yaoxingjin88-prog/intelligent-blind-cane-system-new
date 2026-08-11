@@ -159,11 +159,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import axios from 'axios'
+import { ensureAmap } from '../utils/amap'
+
+defineOptions({ name: 'MonitoringCenter' })
 
 const router = useRouter()
 const mapContainerRef = ref(null)
@@ -344,7 +347,8 @@ const renderMarkers = () => {
   }
 }
 
-const initMap = () => {
+const initMap = async () => {
+  await ensureAmap()
   if (!window.AMap || !mapContainerRef.value || map) return
   map = new window.AMap.Map(mapContainerRef.value, {
     zoom: 12,
@@ -356,81 +360,67 @@ const initMap = () => {
   renderMarkers()
 }
 
-const fetchTestingIds = async () => {
-  try {
-    const response = await axios.get('/api/devices/test/running', {
-      params: { _t: Date.now() }
-    })
-    if (response.data.code === 200) {
-      runningTestingIds.value = Array.isArray(response.data.data) ? response.data.data : []
-    }
-  } catch (error) {
-    console.error('获取测试设备失败', error)
-    runningTestingIds.value = []
+let overviewRequestId = 0
+let overviewAbortController = null
+
+const refreshOverview = async () => {
+  const requestId = ++overviewRequestId
+  if (overviewAbortController) {
+    overviewAbortController.abort()
   }
-}
+  overviewAbortController = new AbortController()
 
-const fetchAlarms = async () => {
   try {
-    const response = await axios.get('/api/alarm-records', {
-      params: { _t: Date.now() }
+    const response = await axios.get('/api/monitor/overview', {
+      params: { _t: Date.now() },
+      signal: overviewAbortController.signal
     })
-    if (response.data.code === 200) {
-      alarms.value = response.data.data || []
+    if (requestId !== overviewRequestId) return
+    if (response.data.code !== 200) {
+      ElMessage.error(response.data.msg || '加载实时监控中心失败')
+      return
     }
-  } catch (error) {
-    console.error('获取告警失败', error)
-    alarms.value = []
-  }
-}
 
-const fetchDevicesOverview = async () => {
-  try {
-    const response = await axios.get('/api/devices', {
-      params: { _t: Date.now() }
-    })
-    if (response.data.code !== 200) return
-    const rawDevices = response.data.data || []
-    const enhanced = await Promise.all(rawDevices.map(async (device) => {
-      const [latestDataRes, latestAlarmRes] = await Promise.allSettled([
-        axios.get('/api/sensor-data/latest', { params: { deviceId: device.deviceId, _t: Date.now() } }),
-        axios.get('/api/alarm-records/latest', { params: { deviceId: device.deviceId, _t: Date.now() } })
-      ])
-
-      const latestData = latestDataRes.status === 'fulfilled' && latestDataRes.value.data.code === 200
-        ? latestDataRes.value.data.data
-        : null
-      const latestAlarm = latestAlarmRes.status === 'fulfilled' && latestAlarmRes.value.data.code === 200
-        ? latestAlarmRes.value.data.data
-        : null
-
-      return {
-        ...device,
-        latestData,
-        latestAlarm,
-        testing: runningTestingIds.value.includes(device.deviceId)
-      }
-    }))
+    const payload = response.data.data || {}
+    const enhanced = Array.isArray(payload.devices) ? payload.devices : []
     devices.value = enhanced
+    alarms.value = Array.isArray(payload.alarms) ? payload.alarms : []
+    runningTestingIds.value = Array.isArray(payload.testingDeviceIds) ? payload.testingDeviceIds : []
+
     if (!selectedDeviceId.value || !enhanced.some(device => device.id === selectedDeviceId.value)) {
       selectedDeviceId.value = enhanced[0]?.id ?? null
     }
     renderMarkers()
   } catch (error) {
+    if (axios.isCancel?.(error) || error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') {
+      return
+    }
     console.error('获取监控中心设备失败', error)
     ElMessage.error('加载实时监控中心失败')
   }
 }
 
-const refreshOverview = async () => {
-  await Promise.all([fetchTestingIds(), fetchAlarms()])
-  await fetchDevicesOverview()
-}
-
 onMounted(async () => {
-  initMap()
+  await initMap()
   await refreshOverview()
-  overviewTimer = window.setInterval(refreshOverview, 20000)
+  overviewTimer = window.setInterval(refreshOverview, 30000)
+})
+
+onActivated(async () => {
+  if (!map) {
+    await initMap()
+  }
+  await refreshOverview()
+  if (!overviewTimer) {
+    overviewTimer = window.setInterval(refreshOverview, 30000)
+  }
+})
+
+onDeactivated(() => {
+  if (overviewTimer) {
+    window.clearInterval(overviewTimer)
+    overviewTimer = null
+  }
 })
 
 watch(filteredSortedDevices, (value) => {
@@ -446,6 +436,11 @@ watch(filteredSortedDevices, (value) => {
 })
 
 onUnmounted(() => {
+  overviewRequestId += 1
+  if (overviewAbortController) {
+    overviewAbortController.abort()
+    overviewAbortController = null
+  }
   if (overviewTimer) {
     window.clearInterval(overviewTimer)
     overviewTimer = null

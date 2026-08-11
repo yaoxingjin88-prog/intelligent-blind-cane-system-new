@@ -42,6 +42,20 @@ public class SensorDataService {
         return sensorDataMapper.getAllSensorData();
     }
 
+    public List<SensorData> getRecentSensorData(Integer limit) {
+        int normalized = limit == null ? 200 : Math.max(1, Math.min(limit, 1000));
+        return sensorDataMapper.getRecentSensorData(normalized);
+    }
+
+    public List<SensorData> getSensorDataSinceDays(Integer days) {
+        int normalized = days == null ? 7 : Math.max(1, Math.min(days, 90));
+        return sensorDataMapper.getSensorDataSinceDays(normalized);
+    }
+
+    public List<SensorData> getLatestSensorDataForAllDevices() {
+        return sensorDataMapper.getLatestForAllDevices();
+    }
+
     public int countAllSensorData() {
         return sensorDataMapper.countAll();
     }

@@ -18,10 +18,15 @@ public class SensorDataController {
     @Autowired
     private SensorDataService sensorDataService;
 
-    @Operation(summary = "获取所有传感器数据", description = "获取系统中所有传感器数据的信息")
+    @Operation(summary = "获取所有传感器数据", description = "默认返回最近若干条，避免全表拉取拖垮服务")
     @GetMapping
-    public Result<List<SensorData>> getAllSensorData() {
-        return Result.success(sensorDataService.getAllSensorData());
+    public Result<List<SensorData>> getAllSensorData(
+            @RequestParam(required = false, defaultValue = "200") Integer limit,
+            @RequestParam(required = false, defaultValue = "false") Boolean all) {
+        if (Boolean.TRUE.equals(all)) {
+            return Result.success(sensorDataService.getAllSensorData());
+        }
+        return Result.success(sensorDataService.getRecentSensorData(limit));
     }
 
     @Operation(summary = "获取传感器数据总数", description = "获取系统当前传感器数据总条数")

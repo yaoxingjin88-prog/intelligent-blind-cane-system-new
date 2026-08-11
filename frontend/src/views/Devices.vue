@@ -183,7 +183,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus, Edit, Delete, View } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
@@ -487,6 +487,11 @@ export default {
           openAddDeviceDialog()
         }, 100)
       }
+    })
+
+    onActivated(() => {
+      fetchUsersOptions()
+      fetchDevices()
     })
     
     return {

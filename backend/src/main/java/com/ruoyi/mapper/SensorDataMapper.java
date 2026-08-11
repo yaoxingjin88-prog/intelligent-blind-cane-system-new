@@ -12,6 +12,15 @@ public interface SensorDataMapper {
     @Select("SELECT id, device_id as deviceId, obstacle_distance as obstacleDistance, is_fall as isFall, accel_x as accelX, accel_y as accelY, accel_z as accelZ, fall_confidence as fallConfidence, latitude, longitude, temperature, humidity, data_time as dataTime FROM sensor_data")
     List<SensorData> getAllSensorData();
 
+    @Select("SELECT id, device_id as deviceId, obstacle_distance as obstacleDistance, is_fall as isFall, accel_x as accelX, accel_y as accelY, accel_z as accelZ, fall_confidence as fallConfidence, latitude, longitude, temperature, humidity, data_time as dataTime, created_at as createTime FROM sensor_data ORDER BY created_at DESC, id DESC LIMIT #{limit}")
+    List<SensorData> getRecentSensorData(@Param("limit") Integer limit);
+
+    @Select("SELECT id, device_id as deviceId, obstacle_distance as obstacleDistance, is_fall as isFall, accel_x as accelX, accel_y as accelY, accel_z as accelZ, fall_confidence as fallConfidence, latitude, longitude, temperature, humidity, data_time as dataTime, created_at as createTime FROM sensor_data WHERE created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)")
+    List<SensorData> getSensorDataSinceDays(@Param("days") Integer days);
+
+    @Select("SELECT id, device_id as deviceId, obstacle_distance as obstacleDistance, is_fall as isFall, accel_x as accelX, accel_y as accelY, accel_z as accelZ, fall_confidence as fallConfidence, latitude, longitude, temperature, humidity, data_time as dataTime, created_at as createTime FROM (SELECT id, device_id, obstacle_distance, is_fall, accel_x, accel_y, accel_z, fall_confidence, latitude, longitude, temperature, humidity, data_time, created_at, ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY created_at DESC, id DESC) AS rn FROM sensor_data) ranked WHERE ranked.rn = 1")
+    List<SensorData> getLatestForAllDevices();
+
     @Select("SELECT id, device_id as deviceId, obstacle_distance as obstacleDistance, is_fall as isFall, accel_x as accelX, accel_y as accelY, accel_z as accelZ, fall_confidence as fallConfidence, latitude, longitude, temperature, humidity, data_time as dataTime FROM sensor_data WHERE id = #{id}")
     SensorData getSensorDataById(Long id);
 

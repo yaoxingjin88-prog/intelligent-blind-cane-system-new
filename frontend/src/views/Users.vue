@@ -164,7 +164,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRoute } from 'vue-router'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
@@ -513,6 +513,10 @@ export default {
           openAddUserDialog()
         }, 100)
       }
+    })
+
+    onActivated(() => {
+      fetchUsers()
     })
     
     return {

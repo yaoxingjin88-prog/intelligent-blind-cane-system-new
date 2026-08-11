@@ -121,7 +121,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { Plus, Check, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 
@@ -196,10 +196,13 @@ export default {
     
     const fetchAlarmRecords = async () => {
       try {
-        // 调用后端API获取告警记录列表
-        const response = await fetch('/api/alarm-records', {
-          cache: 'no-cache' // 禁用缓存，确保获取最新数据
+        // 管理页取最近 500 条，避免全表拖垮；不足时仍够日常查看
+        const response = await fetch('/api/alarm-records?limit=500', {
+          cache: 'no-cache'
         })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
         const data = await response.json()
         alarmRecords.value = (data.data || []).slice().sort((a, b) => String(b.alarmTime || '').localeCompare(String(a.alarmTime || '')))
         total.value = alarmRecords.value.length
@@ -316,13 +319,30 @@ export default {
     
     let alarmPageTimer = null
     const onAlarmsChanged = () => fetchAlarmRecords()
+    const startAlarmPolling = () => {
+      if (alarmPageTimer) return
+      alarmPageTimer = window.setInterval(fetchAlarmRecords, 30000)
+    }
+    const stopAlarmPolling = () => {
+      if (alarmPageTimer) {
+        window.clearInterval(alarmPageTimer)
+        alarmPageTimer = null
+      }
+    }
     onMounted(() => {
       fetchAlarmRecords()
-      alarmPageTimer = window.setInterval(fetchAlarmRecords, 15000)
+      startAlarmPolling()
       window.addEventListener('alarm-records-changed', onAlarmsChanged)
     })
+    onActivated(() => {
+      fetchAlarmRecords()
+      startAlarmPolling()
+    })
+    onDeactivated(() => {
+      stopAlarmPolling()
+    })
     onUnmounted(() => {
-      if (alarmPageTimer) window.clearInterval(alarmPageTimer)
+      stopAlarmPolling()
       window.removeEventListener('alarm-records-changed', onAlarmsChanged)
     })
     

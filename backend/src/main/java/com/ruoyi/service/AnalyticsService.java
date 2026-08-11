@@ -36,22 +36,18 @@ public class AnalyticsService {
 
     public Map<String, Object> getDashboardData() {
         List<CaneDevice> devices = safeList(caneDeviceService.getAllDevices());
-        List<SensorData> sensorDataList = safeList(sensorDataService.getAllSensorData());
+        // 仅取近 7 天传感器数据，避免全表扫描拖垮服务
+        List<SensorData> sensorDataList = safeList(sensorDataService.getSensorDataSinceDays(7));
         List<AlarmRecord> alarmRecords = safeList(alarmRecordService.getAllAlarmRecords());
+        int sensorTotalCount = sensorDataService.countAllSensorData();
 
         Map<String, CaneDevice> deviceMap = devices.stream()
                 .filter(device -> device.getDeviceId() != null)
                 .collect(Collectors.toMap(CaneDevice::getDeviceId, device -> device, (left, right) -> left, LinkedHashMap::new));
 
         Map<String, SensorData> latestSensorByDevice = new HashMap<>();
-        for (SensorData sensorData : sensorDataList) {
-            if (sensorData.getDeviceId() == null) {
-                continue;
-            }
-            SensorData existing = latestSensorByDevice.get(sensorData.getDeviceId());
-            LocalDateTime currentTime = extractSensorTime(sensorData);
-            LocalDateTime existingTime = extractSensorTime(existing);
-            if (existing == null || isAfter(currentTime, existingTime)) {
+        for (SensorData sensorData : safeList(sensorDataService.getLatestSensorDataForAllDevices())) {
+            if (sensorData.getDeviceId() != null) {
                 latestSensorByDevice.put(sensorData.getDeviceId(), sensorData);
             }
         }
@@ -60,8 +56,11 @@ public class AnalyticsService {
                 .filter(alarm -> alarm.getDeviceId() != null)
                 .collect(Collectors.groupingBy(AlarmRecord::getDeviceId));
 
+        Map<String, Object> overview = buildOverview(devices, sensorDataList, alarmRecords);
+        overview.put("sensorCount", sensorTotalCount);
+
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("overview", buildOverview(devices, sensorDataList, alarmRecords));
+        result.put("overview", overview);
         result.put("activityTrend", buildActivityTrend(sensorDataList));
         result.put("batteryTrend", buildBatteryTrend(devices));
         result.put("alarmDistribution", buildAlarmDistribution(alarmRecords));

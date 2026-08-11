@@ -128,7 +128,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 
@@ -213,9 +213,12 @@ export default {
     const fetchSensorData = async () => {
       try {
         // 调用后端API获取传感器数据列表
-        const response = await fetch('/api/sensor-data', {
-          cache: 'no-cache' // 禁用缓存，确保获取最新数据
+        const response = await fetch('/api/sensor-data?limit=300', {
+          cache: 'no-cache'
         })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
         const data = await response.json()
         sensorData.value = data.data || []
         total.value = sensorData.value.length
@@ -316,6 +319,10 @@ export default {
     }
     
     onMounted(() => {
+      fetchSensorData()
+    })
+
+    onActivated(() => {
       fetchSensorData()
     })
     
