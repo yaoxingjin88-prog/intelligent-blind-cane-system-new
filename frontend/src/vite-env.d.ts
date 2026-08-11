@@ -6,9 +6,19 @@ declare module '*.vue' {
   export default component
 }
 
-// 高德地图全局声明
+import 'axios'
+
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    __retryCount?: number
+    __retryCountMax?: number
+  }
+}
+
 declare global {
   interface Window {
     AMap: any
   }
 }
+
+export {}

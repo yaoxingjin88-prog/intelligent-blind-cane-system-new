@@ -1,11 +1,10 @@
 import axios from 'axios'
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const isRetryable = (error) => {
+const isRetryable = (error: any) => {
   const status = error?.response?.status
   if (status === 502 || status === 503 || status === 504) return true
-  // 网络中断 / 超时
   if (!error?.response && (error?.code === 'ECONNABORTED' || error?.message?.includes('Network Error'))) {
     return true
   }
