@@ -250,7 +250,10 @@ export default {
     onMounted(() => {
       syncActiveMenu(router.currentRoute.value.path)
       checkLoginStatus()
-      fetchHeaderNotifications()
+      // 延迟拉顶部告警，避免与首页看板首次请求抢后端
+      window.setTimeout(() => {
+        fetchHeaderNotifications()
+      }, 1200)
 
       alarmPollTimer = window.setInterval(() => {
         fetchHeaderNotifications()

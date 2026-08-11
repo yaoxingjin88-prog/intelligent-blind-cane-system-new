@@ -26,11 +26,28 @@
             <span>设备列表</span>
             <p class="header-subtitle">支持快速进入实时监控、切换测试状态，并查看设备所属用户与电量概况</p>
           </div>
-          <el-tag type="primary" effect="plain">共 {{ total }} 台设备</el-tag>
+          <div class="card-header__actions">
+            <el-button text type="primary" :loading="loading" @click="reloadDevices">刷新</el-button>
+            <el-tag type="primary" effect="plain">共 {{ total }} 台设备</el-tag>
+          </div>
         </div>
       </template>
+
+      <el-alert
+        v-if="loadError"
+        :title="loadError"
+        type="error"
+        show-icon
+        :closable="false"
+        class="load-error-alert"
+      >
+        <template #default>
+          <p>后端服务暂时不可用（502），通常是服务器未启动或网关超时。</p>
+          <el-button type="primary" size="small" :loading="loading" @click="reloadDevices">重新加载</el-button>
+        </template>
+      </el-alert>
       
-      <el-table :data="paginatedDevices" class="devices-table" style="width: 100%" stripe>
+      <el-table v-loading="loading" :data="paginatedDevices" class="devices-table" style="width: 100%" stripe>
         <el-table-column prop="id" label="ID" width="80" align="center" />
         <el-table-column label="设备信息" min-width="220">
           <template #default="{ row }">
@@ -187,6 +204,7 @@ import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus, Edit, Delete, View } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { fetchJson } from '../utils/http'
 
 export default {
   name: 'Devices',
@@ -205,6 +223,9 @@ export default {
     const currentPage = ref(1)
     const pageSize = ref(10)
     const testingDeviceIds = ref([])
+    const loading = ref(false)
+    const loadError = ref('')
+    let lastLoadedAt = 0
     
     const addDialogVisible = ref(false)
     const editDialogVisible = ref(false)
@@ -279,24 +300,21 @@ export default {
 
     const fetchUsersOptions = async () => {
       try {
-        const response = await fetch('/api/users', {
-          cache: 'no-cache'
-        })
-        const data = await response.json()
+        const data = await fetchJson('/api/users')
         usersOptions.value = data.data || []
       } catch (error) {
         console.error('获取用户选项失败:', error)
-        usersOptions.value = []
+        if (!devices.value.length) {
+          loadError.value = '获取用户列表失败，请检查后端服务是否已启动'
+        }
       }
     }
     
     const fetchDevices = async () => {
+      loading.value = true
+      loadError.value = ''
       try {
-        // 调用后端API获取设备列表
-        const response = await fetch('/api/devices', {
-          cache: 'no-cache' // 禁用缓存，确保获取最新数据
-        })
-        const data = await response.json()
+        const data = await fetchJson('/api/devices')
         devices.value = data.data || []
         total.value = devices.value.length
         const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
@@ -304,22 +322,36 @@ export default {
           currentPage.value = maxPage
         }
         await fetchTestingDeviceIds()
+        lastLoadedAt = Date.now()
       } catch (error) {
         console.error('获取设备列表失败:', error)
+        loadError.value = '获取设备列表失败，后端返回 502 或服务未响应'
+        ElMessage.error('获取设备列表失败，请稍后重试')
+      } finally {
+        loading.value = false
       }
     }
 
     const fetchTestingDeviceIds = async () => {
       try {
-        const response = await fetch('/api/devices/test/running', {
-          cache: 'no-cache'
-        })
-        const data = await response.json()
+        const data = await fetchJson('/api/devices/test/running')
         testingDeviceIds.value = Array.isArray(data.data) ? data.data : []
       } catch (error) {
         console.error('获取测试设备状态失败:', error)
         testingDeviceIds.value = []
       }
+    }
+
+    const reloadDevices = async () => {
+      await Promise.all([fetchUsersOptions(), fetchDevices()])
+    }
+
+    const loadDevicesIfStale = async (force = false) => {
+      const stale = Date.now() - lastLoadedAt > 15000
+      if (!force && !stale && devices.value.length) {
+        return
+      }
+      await reloadDevices()
     }
 
     const isTesting = (deviceId) => {
@@ -478,8 +510,7 @@ export default {
     }
     
     onMounted(() => {
-      fetchUsersOptions()
-      fetchDevices()
+      loadDevicesIfStale(true)
       
       // 检查URL参数，如果有action=add则打开添加设备对话框
       if (route.query.action === 'add') {
@@ -490,13 +521,15 @@ export default {
     })
 
     onActivated(() => {
-      fetchUsersOptions()
-      fetchDevices()
+      loadDevicesIfStale()
     })
     
     return {
       devices,
       usersOptions,
+      loading,
+      loadError,
+      reloadDevices,
       total,
       currentPage,
       pageSize,
@@ -605,6 +638,16 @@ export default {
   gap: 16px;
   padding: 18px 22px 16px;
   border-bottom: 1px solid #f1f5f9;
+}
+
+.card-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.load-error-alert {
+  margin: 0 22px 16px;
 }
 
 .card-header span {

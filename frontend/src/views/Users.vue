@@ -168,6 +168,7 @@ import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRoute } from 'vue-router'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { fetchJson } from '../utils/http'
 
 export default {
   name: 'Users',
@@ -327,29 +328,20 @@ export default {
     
     const fetchUsers = async () => {
       try {
-        // 调用后端API获取用户列表
-        console.log('开始获取用户列表')
-        const [userResponse, deviceResponse] = await Promise.all([
-          fetch('/api/users', {
-            cache: 'no-cache'
-          }),
-          fetch('/api/devices', {
-            cache: 'no-cache'
-          })
+        const [userData, deviceData] = await Promise.all([
+          fetchJson('/api/users'),
+          fetchJson('/api/devices')
         ])
-        const userData = await userResponse.json()
-        const deviceData = await deviceResponse.json()
-        console.log('获取用户列表响应:', userData)
         devices.value = deviceData.data || []
         users.value = mergeUsersWithDevices(userData.data || [], devices.value)
         total.value = users.value.length
-        console.log('用户列表数据:', users.value)
         const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
         if (currentPage.value > maxPage) {
           currentPage.value = maxPage
         }
       } catch (error) {
         console.error('获取用户列表失败:', error)
+        ElMessage.error('获取用户列表失败，请检查后端服务')
       }
     }
     

@@ -5,9 +5,23 @@
         <h2>智能盲杖数据看板</h2>
         <p>面向管理端的风险热力、设备健康与活跃趋势总览</p>
       </div>
-      <el-button type="primary" @click="loadDashboard">刷新看板</el-button>
+      <el-button type="primary" :loading="loading" @click="loadDashboard">刷新看板</el-button>
     </div>
 
+    <el-alert
+      v-if="loadError"
+      :title="loadError"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="load-error-alert"
+    >
+      <template #default>
+        <el-button type="primary" size="small" :loading="loading" @click="loadDashboard">重新加载</el-button>
+      </template>
+    </el-alert>
+
+    <div v-loading="loading" class="dashboard-body">
     <div class="stats-grid">
       <div v-for="card in statCards" :key="card.label" class="stat-card">
         <p class="stat-label">{{ card.label }}</p>
@@ -125,15 +139,16 @@
         </el-table>
       </el-card>
     </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onMounted, onUnmounted, ref } from 'vue'
-import axios from 'axios'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { ensureAmap } from '../utils/amap'
+import { fetchJson } from '../utils/http'
 
 defineOptions({ name: 'Dashboard' })
 
@@ -144,6 +159,8 @@ const alarmDistribution = ref<any[]>([])
 const deviceRanking = ref<any[]>([])
 const deviceHealth = ref<any[]>([])
 const heatmapPoints = ref<any[]>([])
+const loading = ref(false)
+const loadError = ref('')
 
 const mapContainer = ref<HTMLElement | null>(null)
 const activityChartRef = ref<HTMLElement | null>(null)
@@ -156,6 +173,8 @@ let activityChart: any = null
 let batteryChart: any = null
 let alarmChart: any = null
 let hotspotMarkers: any[] = []
+let dashboardRequestId = 0
+let retryTimer: ReturnType<typeof setTimeout> | null = null
 
 const statCards = computed(() => [
   { label: '设备总数', value: overview.value.deviceCount ?? 0, sub: `在线 ${overview.value.onlineDevices ?? 0} 台` },
@@ -176,10 +195,32 @@ const getHealthTagType = (score: number) => {
   return 'danger'
 }
 
-const loadDashboard = async () => {
+const renderDashboard = async () => {
+  await nextTick()
+  requestAnimationFrame(() => {
+    initCharts()
+    updateCharts()
+    activityChart?.resize()
+    batteryChart?.resize()
+    alarmChart?.resize()
+  })
+  await initMap()
+  updateHeatmap()
+}
+
+const loadDashboard = async (options: { silent?: boolean } = {}) => {
+  const requestId = ++dashboardRequestId
+  loading.value = true
+  loadError.value = ''
+
   try {
-    const response = await axios.get('/api/analytics/dashboard')
-    const data = response.data?.data || {}
+    const result = await fetchJson('/api/analytics/dashboard', {
+      retries: 3,
+      retryDelay: 1000
+    })
+    if (requestId !== dashboardRequestId) return
+
+    const data = result?.data || {}
     overview.value = data.overview || {}
     activityTrend.value = data.activityTrend || []
     batteryTrend.value = data.batteryTrend || []
@@ -187,15 +228,29 @@ const loadDashboard = async () => {
     deviceRanking.value = data.deviceRanking || []
     deviceHealth.value = data.deviceHealth || []
     heatmapPoints.value = data.heatmapPoints || []
-    await nextTick()
-    initCharts()
-    updateCharts()
-    initMap()
-    updateHeatmap()
+
+    await renderDashboard()
   } catch (error) {
+    if (requestId !== dashboardRequestId) return
     console.error('加载看板失败', error)
-    ElMessage.error('加载看板失败')
+    loadError.value = '看板数据加载失败，可能是后端尚未就绪或网关超时'
+    if (!options.silent) {
+      ElMessage.error('加载看板失败，正在自动重试…')
+    }
+    scheduleDashboardRetry()
+  } finally {
+    if (requestId === dashboardRequestId) {
+      loading.value = false
+    }
   }
+}
+
+const scheduleDashboardRetry = () => {
+  if (retryTimer) return
+  retryTimer = window.setTimeout(async () => {
+    retryTimer = null
+    await loadDashboard({ silent: true })
+  }, 2000)
 }
 
 const initCharts = () => {
@@ -352,17 +407,25 @@ const handleResize = () => {
 }
 
 onMounted(async () => {
-  await loadDashboard()
+  // 登录后首次进入时，稍等布局稳定再拉数，减少偶发空数据
+  await nextTick()
+  requestAnimationFrame(() => {
+    loadDashboard()
+  })
   window.addEventListener('resize', handleResize)
 })
 
 onActivated(() => {
   handleResize()
-  // 从缓存切回时刷新一次，避免展示过期空数据
-  loadDashboard()
+  loadDashboard({ silent: true })
 })
 
 onUnmounted(() => {
+  dashboardRequestId += 1
+  if (retryTimer) {
+    window.clearTimeout(retryTimer)
+    retryTimer = null
+  }
   window.removeEventListener('resize', handleResize)
   activityChart?.dispose()
   batteryChart?.dispose()
@@ -390,6 +453,17 @@ onUnmounted(() => {
   overflow-x: hidden;
   overflow-y: visible;
   background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
+}
+
+.load-error-alert {
+  margin-bottom: 4px;
+}
+
+.dashboard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 320px;
 }
 .hero {
   display: flex;
