@@ -169,7 +169,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import axios from 'axios'
+import axios from '../utils/request'
 import { ensureAmap } from '../utils/amap'
 
 defineOptions({ name: 'Fences' })
@@ -440,7 +440,10 @@ const fetchDevices = async () => {
 
 const fetchFences = async () => {
   try {
-    const response = await axios.get('/api/fences/all', { params: { _t: Date.now() } })
+    const response = await axios.get('/api/fences/all', {
+      params: { _t: Date.now() },
+      __retryCountMax: 3
+    })
     if (response.data.code === 200) {
       const deviceMap = new Map(devices.value.map(device => [device.deviceId, device]))
       fences.value = (response.data.data || []).map((item) => ({
@@ -449,6 +452,7 @@ const fetchFences = async () => {
       }))
     }
   } catch (error) {
+    // 仅在旧后端没有 /all 时回退；502 已由 axios 拦截器重试
     if (error?.response?.status === 404) {
       try {
         const deviceMap = new Map(devices.value.map(device => [device.deviceId, device]))
@@ -478,6 +482,7 @@ const fetchFences = async () => {
       }
     }
     console.error('获取围栏失败', error)
+    ElMessage.error('获取围栏失败，请稍后重试')
     fences.value = []
   }
 }

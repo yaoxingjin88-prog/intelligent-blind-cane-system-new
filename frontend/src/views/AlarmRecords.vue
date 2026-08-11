@@ -124,6 +124,7 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { Plus, Check, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { fetchJson } from '../utils/http'
 
 export default {
   name: 'AlarmRecords',
@@ -196,14 +197,11 @@ export default {
     
     const fetchAlarmRecords = async () => {
       try {
-        // 管理页取最近 500 条，避免全表拖垮；不足时仍够日常查看
-        const response = await fetch('/api/alarm-records?limit=500', {
-          cache: 'no-cache'
+        // 管理页取最近 200 条；经 Vercel 反代时 payload 过大易超时 502
+        const data = await fetchJson('/api/alarm-records?limit=200', {
+          retries: 2,
+          retryDelay: 700
         })
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
-        }
-        const data = await response.json()
         alarmRecords.value = (data.data || []).slice().sort((a, b) => String(b.alarmTime || '').localeCompare(String(a.alarmTime || '')))
         total.value = alarmRecords.value.length
         const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
@@ -212,6 +210,7 @@ export default {
         }
       } catch (error) {
         console.error('获取告警记录列表失败:', error)
+        ElMessage.error('获取告警记录失败，请稍后重试')
       }
     }
     

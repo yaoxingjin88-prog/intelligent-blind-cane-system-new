@@ -163,7 +163,7 @@ import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watc
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import axios from 'axios'
+import axios from '../utils/request'
 import { ensureAmap } from '../utils/amap'
 
 defineOptions({ name: 'MonitoringCenter' })

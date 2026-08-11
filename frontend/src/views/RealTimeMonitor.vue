@@ -267,7 +267,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElNotification } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import axios from 'axios'
+import axios from '../utils/request'
 import { ensureAmap } from '../utils/amap'
 
 defineOptions({ name: 'RealTimeMonitor' })

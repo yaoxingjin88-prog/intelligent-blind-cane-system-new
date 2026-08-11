@@ -111,7 +111,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
+import axios from '../utils/request'
 import { ensureAmap } from '../utils/amap'
 
 defineOptions({ name: 'TrajectoryPlayback' })

@@ -150,6 +150,7 @@ import { computed, nextTick, onActivated, onMounted, onUnmounted, ref } from 'vu
 import { ElMessage } from 'element-plus'
 import { ensureAmap } from '../utils/amap'
 import { fetchJson } from '../utils/http'
+// 看板走 fetchJson（自带 502 重试）；图表/地图异步渲染
 
 defineOptions({ name: 'Dashboard' })
 
