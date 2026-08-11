@@ -33,6 +33,23 @@ public class AlarmRecordService {
         return alarmRecordMapper.countAll();
     }
 
+    public int countUnhandledAlarmRecords() {
+        return alarmRecordMapper.countUnhandled();
+    }
+
+    public List<java.util.Map<String, Object>> getUnhandledCountByDevice() {
+        return alarmRecordMapper.getUnhandledCountByDevice();
+    }
+
+    public List<java.util.Map<String, Object>> getDeviceAlarmStats(Integer limit) {
+        int normalized = limit == null ? 6 : Math.max(1, Math.min(limit, 20));
+        return alarmRecordMapper.getDeviceAlarmStats(normalized);
+    }
+
+    public List<java.util.Map<String, Object>> getAlarmTypeDistribution() {
+        return alarmRecordMapper.getAlarmTypeDistribution();
+    }
+
     public AlarmRecord getAlarmRecordById(Long id) {
         return alarmRecordMapper.getAlarmRecordById(id);
     }

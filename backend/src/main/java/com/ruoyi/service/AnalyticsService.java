@@ -1,6 +1,5 @@
 package com.ruoyi.service;
 
-import com.ruoyi.entity.AlarmRecord;
 import com.ruoyi.entity.CaneDevice;
 import com.ruoyi.entity.SensorData;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +25,9 @@ import java.util.stream.Collectors;
 @Service
 public class AnalyticsService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final long DASHBOARD_CACHE_MS = 30_000L;
+
+    private volatile DashboardCache dashboardCache;
 
     @Autowired
     private CaneDeviceService caneDeviceService;
@@ -35,11 +37,19 @@ public class AnalyticsService {
     private AlarmRecordService alarmRecordService;
 
     public Map<String, Object> getDashboardData() {
+        long now = System.currentTimeMillis();
+        DashboardCache cached = dashboardCache;
+        if (cached != null && cached.expiresAt > now) {
+            return cached.data;
+        }
+
         List<CaneDevice> devices = safeList(caneDeviceService.getAllDevices());
-        // 仅取近 7 天传感器数据，避免全表扫描拖垮服务
-        List<SensorData> sensorDataList = safeList(sensorDataService.getSensorDataSinceDays(7));
-        List<AlarmRecord> alarmRecords = safeList(alarmRecordService.getAllAlarmRecords());
+        List<SensorData> sensorDataList = safeList(sensorDataService.getSensorDataSinceDaysLimited(7, 2000));
         int sensorTotalCount = sensorDataService.countAllSensorData();
+        int alarmTotalCount = alarmRecordService.countAllAlarmRecords();
+        int unhandledAlarmCount = alarmRecordService.countUnhandledAlarmRecords();
+        int riskEventCount = sensorDataService.countRiskEventsSinceDays(7);
+        int activeDevicesToday = sensorDataService.countActiveDevicesToday();
 
         Map<String, CaneDevice> deviceMap = devices.stream()
                 .filter(device -> device.getDeviceId() != null)
@@ -52,50 +62,90 @@ public class AnalyticsService {
             }
         }
 
-        Map<String, List<AlarmRecord>> alarmsByDevice = alarmRecords.stream()
-                .filter(alarm -> alarm.getDeviceId() != null)
-                .collect(Collectors.groupingBy(AlarmRecord::getDeviceId));
+        Map<String, Long> unhandledByDevice = alarmRecordService.getUnhandledCountByDevice().stream()
+                .filter(row -> row.get("deviceId") != null)
+                .collect(Collectors.toMap(
+                        row -> String.valueOf(row.get("deviceId")),
+                        row -> ((Number) row.getOrDefault("unhandledCount", 0)).longValue(),
+                        Long::sum,
+                        LinkedHashMap::new
+                ));
 
-        Map<String, Object> overview = buildOverview(devices, sensorDataList, alarmRecords);
-        overview.put("sensorCount", sensorTotalCount);
+        Map<String, Object> overview = buildOverview(devices, unhandledAlarmCount, alarmTotalCount, riskEventCount, activeDevicesToday, sensorTotalCount);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("overview", overview);
         result.put("activityTrend", buildActivityTrend(sensorDataList));
         result.put("batteryTrend", buildBatteryTrend(devices));
-        result.put("alarmDistribution", buildAlarmDistribution(alarmRecords));
-        result.put("deviceRanking", buildDeviceRanking(devices, alarmsByDevice));
-        result.put("deviceHealth", buildDeviceHealth(devices, latestSensorByDevice, alarmsByDevice));
+        result.put("alarmDistribution", buildAlarmDistributionFromStats(alarmRecordService.getAlarmTypeDistribution()));
+        result.put("deviceRanking", buildDeviceRankingFromStats(alarmRecordService.getDeviceAlarmStats(6), deviceMap));
+        result.put("deviceHealth", buildDeviceHealth(devices, latestSensorByDevice, unhandledByDevice));
         result.put("heatmapPoints", buildHeatmapPoints(sensorDataList, deviceMap));
+
+        dashboardCache = new DashboardCache(result, now + DASHBOARD_CACHE_MS);
         return result;
     }
 
-    private Map<String, Object> buildOverview(List<CaneDevice> devices, List<SensorData> sensorDataList, List<AlarmRecord> alarmRecords) {
+    private Map<String, Object> buildOverview(
+            List<CaneDevice> devices,
+            long unhandledAlarms,
+            long alarmCount,
+            long riskEvents,
+            long activeDevicesToday,
+            long sensorCount) {
         long onlineDevices = devices.stream().filter(device -> isOnline(device.getStatus())).count();
         long lowBatteryDevices = devices.stream()
                 .filter(device -> device.getBatteryLevel() != null && device.getBatteryLevel() <= 20)
                 .count();
-        long unhandledAlarms = alarmRecords.stream().filter(this::isUnhandledAlarm).count();
-        long riskEvents = sensorDataList.stream()
-                .filter(sensor -> sensor.getObstacleDistance() != null && sensor.getObstacleDistance() <= 80)
-                .count();
-        Set<String> activeDevicesToday = sensorDataList.stream()
-                .filter(sensor -> extractSensorTime(sensor) != null)
-                .filter(sensor -> LocalDate.now().equals(extractSensorTime(sensor).toLocalDate()))
-                .map(SensorData::getDeviceId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toCollection(TreeSet::new));
 
         Map<String, Object> overview = new LinkedHashMap<>();
         overview.put("deviceCount", devices.size());
         overview.put("onlineDevices", onlineDevices);
         overview.put("lowBatteryDevices", lowBatteryDevices);
-        overview.put("alarmCount", alarmRecords.size());
+        overview.put("alarmCount", alarmCount);
         overview.put("unhandledAlarms", unhandledAlarms);
-        overview.put("sensorCount", sensorDataList.size());
+        overview.put("sensorCount", sensorCount);
         overview.put("riskEvents", riskEvents);
-        overview.put("activeDevicesToday", activeDevicesToday.size());
+        overview.put("activeDevicesToday", activeDevicesToday);
         return overview;
+    }
+
+    private List<Map<String, Object>> buildAlarmDistributionFromStats(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return rows.stream().map(row -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("name", row.getOrDefault("name", "其他报警"));
+            item.put("value", ((Number) row.getOrDefault("value", 0)).longValue());
+            return item;
+        }).collect(Collectors.toList());
+    }
+
+    private List<Map<String, Object>> buildDeviceRankingFromStats(List<Map<String, Object>> rows, Map<String, CaneDevice> deviceMap) {
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return rows.stream().map(row -> {
+            String deviceId = String.valueOf(row.get("deviceId"));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("deviceId", deviceId);
+            item.put("deviceName", normalizeDeviceName(deviceMap.get(deviceId)));
+            item.put("alarmCount", ((Number) row.getOrDefault("alarmCount", 0)).intValue());
+            item.put("unhandledCount", ((Number) row.getOrDefault("unhandledCount", 0)).intValue());
+            item.put("latestAlarmTime", row.getOrDefault("latestAlarmTime", "-"));
+            return item;
+        }).collect(Collectors.toList());
+    }
+
+    private static final class DashboardCache {
+        private final Map<String, Object> data;
+        private final long expiresAt;
+
+        private DashboardCache(Map<String, Object> data, long expiresAt) {
+            this.data = data;
+            this.expiresAt = expiresAt;
+        }
     }
 
     private List<Map<String, Object>> buildActivityTrend(List<SensorData> sensorDataList) {
@@ -153,54 +203,14 @@ public class AnalyticsService {
                 .collect(Collectors.toList());
     }
 
-    private List<Map<String, Object>> buildAlarmDistribution(List<AlarmRecord> alarmRecords) {
-        Map<String, Long> grouped = alarmRecords.stream()
-                .collect(Collectors.groupingBy(alarm -> normalizeAlarmType(alarm.getAlarmType()), LinkedHashMap::new, Collectors.counting()));
-
-        return grouped.entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .map(entry -> {
-                    Map<String, Object> item = new LinkedHashMap<>();
-                    item.put("name", entry.getKey());
-                    item.put("value", entry.getValue());
-                    return item;
-                })
-                .collect(Collectors.toList());
-    }
-
-    private List<Map<String, Object>> buildDeviceRanking(List<CaneDevice> devices, Map<String, List<AlarmRecord>> alarmsByDevice) {
-        Map<String, CaneDevice> deviceMap = devices.stream()
-                .filter(device -> device.getDeviceId() != null)
-                .collect(Collectors.toMap(CaneDevice::getDeviceId, device -> device, (left, right) -> left));
-
-        return alarmsByDevice.entrySet().stream()
-                .map(entry -> {
-                    List<AlarmRecord> alarms = entry.getValue();
-                    long unhandledCount = alarms.stream().filter(this::isUnhandledAlarm).count();
-                    Map<String, Object> item = new LinkedHashMap<>();
-                    item.put("deviceId", entry.getKey());
-                    item.put("deviceName", normalizeDeviceName(deviceMap.get(entry.getKey())));
-                    item.put("alarmCount", alarms.size());
-                    item.put("unhandledCount", unhandledCount);
-                    item.put("latestAlarmTime", alarms.stream()
-                            .map(this::extractAlarmTime)
-                            .filter(Objects::nonNull)
-                            .max(LocalDateTime::compareTo)
-                            .map(DATE_TIME_FORMATTER::format)
-                            .orElse("-"));
-                    return item;
-                })
-                .sorted((left, right) -> Integer.compare(((Number) right.get("alarmCount")).intValue(), ((Number) left.get("alarmCount")).intValue()))
-                .limit(6)
-                .collect(Collectors.toList());
-    }
-
-    private List<Map<String, Object>> buildDeviceHealth(List<CaneDevice> devices, Map<String, SensorData> latestSensorByDevice, Map<String, List<AlarmRecord>> alarmsByDevice) {
+    private List<Map<String, Object>> buildDeviceHealth(
+            List<CaneDevice> devices,
+            Map<String, SensorData> latestSensorByDevice,
+            Map<String, Long> unhandledByDevice) {
         List<Map<String, Object>> panel = new ArrayList<>();
         for (CaneDevice device : devices) {
             SensorData latestSensor = latestSensorByDevice.get(device.getDeviceId());
-            List<AlarmRecord> alarms = alarmsByDevice.getOrDefault(device.getDeviceId(), Collections.emptyList());
-            long unhandledCount = alarms.stream().filter(this::isUnhandledAlarm).count();
+            long unhandledCount = unhandledByDevice.getOrDefault(device.getDeviceId(), 0L);
             LocalDateTime latestTime = extractSensorTime(latestSensor);
             long freshnessMinutes = latestTime == null ? 999 : Math.max(0, Duration.between(latestTime, LocalDateTime.now()).toMinutes());
             int score = 100;
@@ -232,14 +242,6 @@ public class AnalyticsService {
 
         panel.sort((left, right) -> Integer.compare(((Number) left.get("healthScore")).intValue(), ((Number) right.get("healthScore")).intValue()));
         return panel;
-    }
-
-    private boolean isUnhandledAlarm(AlarmRecord alarm) {
-        if (alarm == null || alarm.getStatus() == null) {
-            return false;
-        }
-        String status = alarm.getStatus().trim();
-        return "0".equals(status) || "未处理".equals(status);
     }
 
     private List<Map<String, Object>> buildHeatmapPoints(List<SensorData> sensorDataList, Map<String, CaneDevice> deviceMap) {
@@ -297,13 +299,6 @@ public class AnalyticsService {
         return device.getDeviceId() == null ? "未命名设备" : device.getDeviceId();
     }
 
-    private String normalizeAlarmType(String alarmType) {
-        if (alarmType == null || alarmType.isBlank()) {
-            return "其他报警";
-        }
-        return alarmType;
-    }
-
     private LocalDateTime extractSensorTime(SensorData sensorData) {
         if (sensorData == null) {
             return null;
@@ -315,13 +310,6 @@ public class AnalyticsService {
         return parseDateTime(sensorData.getCreateTime());
     }
 
-    private LocalDateTime extractAlarmTime(AlarmRecord alarmRecord) {
-        if (alarmRecord == null) {
-            return null;
-        }
-        return parseDateTime(alarmRecord.getAlarmTime());
-    }
-
     private LocalDateTime parseDateTime(String value) {
         if (value == null || value.isBlank() || "-".equals(value)) {
             return null;
@@ -331,16 +319,6 @@ public class AnalyticsService {
         } catch (Exception ignored) {
             return null;
         }
-    }
-
-    private boolean isAfter(LocalDateTime current, LocalDateTime existing) {
-        if (current == null) {
-            return false;
-        }
-        if (existing == null) {
-            return true;
-        }
-        return current.isAfter(existing);
     }
 
     private double round(double value, int scale) {

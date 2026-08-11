@@ -15,6 +15,15 @@ public interface SensorDataMapper {
     @Select("SELECT id, device_id as deviceId, obstacle_distance as obstacleDistance, is_fall as isFall, accel_x as accelX, accel_y as accelY, accel_z as accelZ, fall_confidence as fallConfidence, latitude, longitude, temperature, humidity, data_time as dataTime, created_at as createTime FROM sensor_data ORDER BY created_at DESC, id DESC LIMIT #{limit}")
     List<SensorData> getRecentSensorData(@Param("limit") Integer limit);
 
+    @Select("SELECT id, device_id as deviceId, obstacle_distance as obstacleDistance, is_fall as isFall, accel_x as accelX, accel_y as accelY, accel_z as accelZ, fall_confidence as fallConfidence, latitude, longitude, temperature, humidity, data_time as dataTime, created_at as createTime FROM sensor_data WHERE created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY) ORDER BY created_at DESC LIMIT #{limit}")
+    List<SensorData> getSensorDataSinceDaysLimited(@Param("days") Integer days, @Param("limit") Integer limit);
+
+    @Select("SELECT COUNT(*) FROM sensor_data WHERE obstacle_distance <= 80 AND created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)")
+    int countRiskEventsSinceDays(@Param("days") Integer days);
+
+    @Select("SELECT COUNT(DISTINCT device_id) FROM sensor_data WHERE DATE(created_at) = CURDATE()")
+    int countActiveDevicesToday();
+
     @Select("SELECT id, device_id as deviceId, obstacle_distance as obstacleDistance, is_fall as isFall, accel_x as accelX, accel_y as accelY, accel_z as accelZ, fall_confidence as fallConfidence, latitude, longitude, temperature, humidity, data_time as dataTime, created_at as createTime FROM sensor_data WHERE created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)")
     List<SensorData> getSensorDataSinceDays(@Param("days") Integer days);
 

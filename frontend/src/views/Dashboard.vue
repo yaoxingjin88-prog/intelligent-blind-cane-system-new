@@ -21,7 +21,7 @@
       </template>
     </el-alert>
 
-    <div v-loading="loading" class="dashboard-body">
+    <div v-loading="loading" class="dashboard-body stats-section">
     <div class="stats-grid">
       <div v-for="card in statCards" :key="card.label" class="stat-card">
         <p class="stat-label">{{ card.label }}</p>
@@ -29,7 +29,9 @@
         <span class="stat-sub">{{ card.sub }}</span>
       </div>
     </div>
+    </div>
 
+    <div v-loading="chartsLoading" class="dashboard-body charts-section">
     <div class="content-grid">
       <el-card class="panel panel--map">
         <template #header>
@@ -145,12 +147,13 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onMounted, onUnmounted, ref } from 'vue'
-import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { ensureAmap } from '../utils/amap'
 import { fetchJson } from '../utils/http'
 
 defineOptions({ name: 'Dashboard' })
+
+type EchartsModule = typeof import('echarts')
 
 const overview = ref<any>({})
 const activityTrend = ref<any[]>([])
@@ -160,6 +163,7 @@ const deviceRanking = ref<any[]>([])
 const deviceHealth = ref<any[]>([])
 const heatmapPoints = ref<any[]>([])
 const loading = ref(false)
+const chartsLoading = ref(false)
 const loadError = ref('')
 
 const mapContainer = ref<HTMLElement | null>(null)
@@ -172,9 +176,17 @@ let heatmap: any = null
 let activityChart: any = null
 let batteryChart: any = null
 let alarmChart: any = null
+let echartsLib: EchartsModule | null = null
 let hotspotMarkers: any[] = []
 let dashboardRequestId = 0
 let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+const ensureEcharts = async () => {
+  if (!echartsLib) {
+    echartsLib = await import('echarts')
+  }
+  return echartsLib
+}
 
 const statCards = computed(() => [
   { label: '设备总数', value: overview.value.deviceCount ?? 0, sub: `在线 ${overview.value.onlineDevices ?? 0} 台` },
@@ -195,17 +207,24 @@ const getHealthTagType = (score: number) => {
   return 'danger'
 }
 
-const renderDashboard = async () => {
-  await nextTick()
-  requestAnimationFrame(() => {
-    initCharts()
+const renderCharts = async () => {
+  chartsLoading.value = true
+  try {
+    const echarts = await ensureEcharts()
+    await nextTick()
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    initCharts(echarts)
     updateCharts()
     activityChart?.resize()
     batteryChart?.resize()
     alarmChart?.resize()
-  })
-  await initMap()
-  updateHeatmap()
+    // 地图最重，放到图表之后异步加载
+    window.setTimeout(() => {
+      initMap().then(() => updateHeatmap())
+    }, 0)
+  } finally {
+    chartsLoading.value = false
+  }
 }
 
 const loadDashboard = async (options: { silent?: boolean } = {}) => {
@@ -215,8 +234,8 @@ const loadDashboard = async (options: { silent?: boolean } = {}) => {
 
   try {
     const result = await fetchJson('/api/analytics/dashboard', {
-      retries: 3,
-      retryDelay: 1000
+      retries: 2,
+      retryDelay: 600
     })
     if (requestId !== dashboardRequestId) return
 
@@ -228,8 +247,6 @@ const loadDashboard = async (options: { silent?: boolean } = {}) => {
     deviceRanking.value = data.deviceRanking || []
     deviceHealth.value = data.deviceHealth || []
     heatmapPoints.value = data.heatmapPoints || []
-
-    await renderDashboard()
   } catch (error) {
     if (requestId !== dashboardRequestId) return
     console.error('加载看板失败', error)
@@ -243,6 +260,11 @@ const loadDashboard = async (options: { silent?: boolean } = {}) => {
       loading.value = false
     }
   }
+
+  if (requestId !== dashboardRequestId) return
+  if (!loadError.value) {
+    void renderCharts()
+  }
 }
 
 const scheduleDashboardRetry = () => {
@@ -253,7 +275,7 @@ const scheduleDashboardRetry = () => {
   }, 2000)
 }
 
-const initCharts = () => {
+const initCharts = (echarts: EchartsModule) => {
   if (activityChartRef.value && !activityChart) activityChart = echarts.init(activityChartRef.value)
   if (batteryChartRef.value && !batteryChart) batteryChart = echarts.init(batteryChartRef.value)
   if (alarmChartRef.value && !alarmChart) alarmChart = echarts.init(alarmChartRef.value)
@@ -417,7 +439,13 @@ onMounted(async () => {
 
 onActivated(() => {
   handleResize()
-  loadDashboard({ silent: true })
+  if (!overview.value.deviceCount && !loadError.value) {
+    loadDashboard({ silent: true })
+    return
+  }
+  if (activityChart || batteryChart || alarmChart) {
+    handleResize()
+  }
 })
 
 onUnmounted(() => {
@@ -457,6 +485,14 @@ onUnmounted(() => {
 
 .load-error-alert {
   margin-bottom: 4px;
+}
+
+.stats-section {
+  min-height: 120px;
+}
+
+.charts-section {
+  min-height: 480px;
 }
 
 .dashboard-body {
