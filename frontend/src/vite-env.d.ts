@@ -6,19 +6,8 @@ declare module '*.vue' {
   export default component
 }
 
-import 'axios'
-
-declare module 'axios' {
-  export interface AxiosRequestConfig {
-    __retryCount?: number
-    __retryCountMax?: number
-  }
-}
-
 declare global {
   interface Window {
     AMap: any
   }
 }
-
-export {}

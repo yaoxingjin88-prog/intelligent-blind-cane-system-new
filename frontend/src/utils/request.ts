@@ -1,5 +1,10 @@
 import axios from 'axios'
 
+type RetryConfig = {
+  __retryCount?: number
+  __retryCountMax?: number
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const isRetryable = (error: any) => {
@@ -17,7 +22,7 @@ axios.defaults.timeout = 20000
 axios.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const config = error.config || {}
+    const config = (error.config || {}) as typeof error.config & RetryConfig
     const maxRetries = config.__retryCountMax ?? 2
     config.__retryCount = config.__retryCount || 0
 
