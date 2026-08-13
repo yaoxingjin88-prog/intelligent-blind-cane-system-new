@@ -44,10 +44,10 @@ public class MiniController {
     @Value("${demo.location.force:false}")
     private Boolean demoLocationForce;
 
-    @Value("${demo.location.latitude:39.9042}")
+    @Value("${demo.location.latitude:36.321143}")
     private Double demoLocationLatitude;
 
-    @Value("${demo.location.longitude:116.4074}")
+    @Value("${demo.location.longitude:120.397571}")
     private Double demoLocationLongitude;
 
     @Autowired

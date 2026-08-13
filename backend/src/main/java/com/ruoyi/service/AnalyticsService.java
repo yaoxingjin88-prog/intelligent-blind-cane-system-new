@@ -43,47 +43,55 @@ public class AnalyticsService {
             return cached.data;
         }
 
-        List<CaneDevice> devices = safeList(caneDeviceService.getAllDevices());
-        List<SensorData> sensorDataList = safeList(sensorDataService.getSensorDataSinceDaysLimited(7, 2000));
-        int sensorTotalCount = sensorDataService.countAllSensorData();
-        int alarmTotalCount = alarmRecordService.countAllAlarmRecords();
-        int unhandledAlarmCount = alarmRecordService.countUnhandledAlarmRecords();
-        int riskEventCount = sensorDataService.countRiskEventsSinceDays(7);
-        int activeDevicesToday = sensorDataService.countActiveDevicesToday();
-
-        Map<String, CaneDevice> deviceMap = devices.stream()
-                .filter(device -> device.getDeviceId() != null)
-                .collect(Collectors.toMap(CaneDevice::getDeviceId, device -> device, (left, right) -> left, LinkedHashMap::new));
-
-        Map<String, SensorData> latestSensorByDevice = new HashMap<>();
-        for (SensorData sensorData : safeList(sensorDataService.getLatestSensorDataForAllDevices())) {
-            if (sensorData.getDeviceId() != null) {
-                latestSensorByDevice.put(sensorData.getDeviceId(), sensorData);
+        synchronized (this) {
+            now = System.currentTimeMillis();
+            cached = dashboardCache;
+            if (cached != null && cached.expiresAt > now) {
+                return cached.data;
             }
+
+            List<CaneDevice> devices = safeList(caneDeviceService.getAllDevices());
+            List<SensorData> sensorDataList = safeList(sensorDataService.getSensorDataSinceDaysLimited(7, 2000));
+            int sensorTotalCount = sensorDataService.countAllSensorData();
+            int alarmTotalCount = alarmRecordService.countAllAlarmRecords();
+            int unhandledAlarmCount = alarmRecordService.countUnhandledAlarmRecords();
+            int riskEventCount = sensorDataService.countRiskEventsSinceDays(7);
+            int activeDevicesToday = sensorDataService.countActiveDevicesToday();
+
+            Map<String, CaneDevice> deviceMap = devices.stream()
+                    .filter(device -> device.getDeviceId() != null)
+                    .collect(Collectors.toMap(CaneDevice::getDeviceId, device -> device, (left, right) -> left, LinkedHashMap::new));
+
+            Map<String, SensorData> latestSensorByDevice = new HashMap<>();
+            for (SensorData sensorData : safeList(sensorDataService.getLatestSensorDataForAllDevices())) {
+                if (sensorData.getDeviceId() != null) {
+                    latestSensorByDevice.put(sensorData.getDeviceId(), sensorData);
+                }
+            }
+
+            Map<String, Long> unhandledByDevice = alarmRecordService.getUnhandledCountByDevice().stream()
+                    .filter(row -> row.get("deviceId") != null)
+                    .collect(Collectors.toMap(
+                            row -> String.valueOf(row.get("deviceId")),
+                            row -> ((Number) row.getOrDefault("unhandledCount", 0)).longValue(),
+                            Long::sum,
+                            LinkedHashMap::new
+                    ));
+
+            Map<String, Object> overview = buildOverview(devices, unhandledAlarmCount, alarmTotalCount, riskEventCount, activeDevicesToday, sensorTotalCount);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("overview", overview);
+            result.put("activityTrend", buildActivityTrend(sensorDataList));
+            result.put("batteryTrend", buildBatteryTrend(devices));
+            result.put("alarmDistribution", buildAlarmDistributionFromStats(alarmRecordService.getAlarmTypeDistribution()));
+            result.put("deviceRanking", buildDeviceRankingFromStats(alarmRecordService.getDeviceAlarmStats(6), deviceMap));
+            result.put("deviceHealth", buildDeviceHealth(devices, latestSensorByDevice, unhandledByDevice));
+            result.put("heatmapPoints", buildHeatmapPoints(sensorDataList, deviceMap));
+
+            dashboardCache = new DashboardCache(result, now + DASHBOARD_CACHE_MS);
+            return result;
         }
-
-        Map<String, Long> unhandledByDevice = alarmRecordService.getUnhandledCountByDevice().stream()
-                .filter(row -> row.get("deviceId") != null)
-                .collect(Collectors.toMap(
-                        row -> String.valueOf(row.get("deviceId")),
-                        row -> ((Number) row.getOrDefault("unhandledCount", 0)).longValue(),
-                        Long::sum,
-                        LinkedHashMap::new
-                ));
-
-        Map<String, Object> overview = buildOverview(devices, unhandledAlarmCount, alarmTotalCount, riskEventCount, activeDevicesToday, sensorTotalCount);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("overview", overview);
-        result.put("activityTrend", buildActivityTrend(sensorDataList));
-        result.put("batteryTrend", buildBatteryTrend(devices));
-        result.put("alarmDistribution", buildAlarmDistributionFromStats(alarmRecordService.getAlarmTypeDistribution()));
-        result.put("deviceRanking", buildDeviceRankingFromStats(alarmRecordService.getDeviceAlarmStats(6), deviceMap));
-        result.put("deviceHealth", buildDeviceHealth(devices, latestSensorByDevice, unhandledByDevice));
-        result.put("heatmapPoints", buildHeatmapPoints(sensorDataList, deviceMap));
-
-        dashboardCache = new DashboardCache(result, now + DASHBOARD_CACHE_MS);
-        return result;
     }
 
     private Map<String, Object> buildOverview(
@@ -244,10 +252,22 @@ public class AnalyticsService {
         return panel;
     }
 
+    private boolean isValidMapCoordinate(Double latitude, Double longitude) {
+        if (latitude == null || longitude == null) {
+            return false;
+        }
+        // 排除 0,0 及明显无效点（常见未定位默认值）
+        if (Math.abs(latitude) < 0.01 && Math.abs(longitude) < 0.01) {
+            return false;
+        }
+        // 大致限制在中国及周边，避免脏数据把地图拉到大洋
+        return latitude >= 3 && latitude <= 54 && longitude >= 73 && longitude <= 136;
+    }
+
     private List<Map<String, Object>> buildHeatmapPoints(List<SensorData> sensorDataList, Map<String, CaneDevice> deviceMap) {
         Map<String, Map<String, Object>> grouped = new LinkedHashMap<>();
         for (SensorData sensorData : sensorDataList) {
-            if (sensorData.getLongitude() == null || sensorData.getLatitude() == null) {
+            if (!isValidMapCoordinate(sensorData.getLatitude(), sensorData.getLongitude())) {
                 continue;
             }
             if (sensorData.getObstacleDistance() == null || sensorData.getObstacleDistance() > 80) {

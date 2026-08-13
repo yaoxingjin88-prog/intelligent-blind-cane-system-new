@@ -287,7 +287,7 @@ const initMap = async () => {
   if (!window.AMap || !mapContainerRef.value || map) return
   map = new window.AMap.Map(mapContainerRef.value, {
     zoom: 13,
-    center: [116.4074, 39.9042],
+    center: [120.397571, 36.321143],
     viewMode: '2D'
   })
   map.addControl(new window.AMap.Scale())

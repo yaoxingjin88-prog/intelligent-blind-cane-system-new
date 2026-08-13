@@ -25,7 +25,12 @@ public class AlarmRecordController {
             @RequestParam(required = false, defaultValue = "false") Boolean all,
             @RequestParam(required = false, defaultValue = "false") Boolean unhandledOnly) {
         if (Boolean.TRUE.equals(unhandledOnly)) {
-            return Result.success(alarmRecordService.getUnhandledAlarmRecords());
+            List<AlarmRecord> list = alarmRecordService.getUnhandledAlarmRecords();
+            int normalized = limit == null ? 200 : Math.max(1, Math.min(limit, 1000));
+            if (list != null && list.size() > normalized) {
+                return Result.success(list.subList(0, normalized));
+            }
+            return Result.success(list);
         }
         if (Boolean.TRUE.equals(all)) {
             return Result.success(alarmRecordService.getAllAlarmRecords());

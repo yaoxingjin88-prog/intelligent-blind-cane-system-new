@@ -7,8 +7,9 @@ const isRetryableStatus = (status) => status === 502 || status === 503 || status
  */
 export async function fetchJson(url, options = {}) {
   const {
-    retries = 2,
-    retryDelay = 800,
+    retries = 4,
+    retryDelay = 350,
+    timeout = 25000,
     cache = 'no-cache',
     ...fetchOptions
   } = options
@@ -20,8 +21,14 @@ export async function fetchJson(url, options = {}) {
   let lastError = null
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), timeout)
     try {
-      const response = await fetch(fullUrl, { cache, ...fetchOptions })
+      const response = await fetch(fullUrl, {
+        cache,
+        ...fetchOptions,
+        signal: fetchOptions.signal || controller.signal
+      })
       const contentType = response.headers.get('content-type') || ''
 
       if (!response.ok) {
@@ -40,11 +47,14 @@ export async function fetchJson(url, options = {}) {
     } catch (error) {
       lastError = error
       const status = error?.status
-      if (attempt < retries && (isRetryableStatus(status) || !status)) {
+      const aborted = error?.name === 'AbortError'
+      if (attempt < retries && (isRetryableStatus(status) || !status || aborted)) {
         await sleep(retryDelay * (attempt + 1))
         continue
       }
       throw error
+    } finally {
+      window.clearTimeout(timer)
     }
   }
 

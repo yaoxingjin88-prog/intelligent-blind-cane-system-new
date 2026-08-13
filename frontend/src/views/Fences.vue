@@ -344,7 +344,7 @@ const initFenceMap = async () => {
   if (!fenceMap) {
     fenceMap = new window.AMap.Map(fenceMapContainerRef.value, {
       zoom: 13,
-      center: [116.4074, 39.9042],
+      center: [120.397571, 36.321143],
       viewMode: '2D'
     })
     fenceMap.on('click', (event) => {

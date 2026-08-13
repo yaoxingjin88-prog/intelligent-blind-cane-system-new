@@ -146,6 +146,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { House, User, Monitor, DataAnalysis, Bell, Guide, Fold, Expand, BellFilled, Setting, SwitchButton, ArrowDown } from '@element-plus/icons-vue'
+import { fetchJson } from './utils/http'
 
 export default {
   name: 'App',
@@ -204,13 +205,10 @@ export default {
         return
       }
       try {
-        const response = await fetch('/api/alarm-records?unhandledOnly=true', {
-          cache: 'no-cache'
+        const data = await fetchJson('/api/alarm-records?unhandledOnly=true&limit=50', {
+          retries: 3,
+          retryDelay: 400
         })
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
-        }
-        const data = await response.json()
         headerAlarmRecords.value = (data.data || [])
           .sort((a, b) => String(b.alarmTime || '').localeCompare(String(a.alarmTime || '')))
       } catch (error) {
@@ -250,10 +248,10 @@ export default {
     onMounted(() => {
       syncActiveMenu(router.currentRoute.value.path)
       checkLoginStatus()
-      // 延迟拉顶部告警，避免与首页看板首次请求抢后端
+      // 错开首页看板首屏请求，减少并发 502
       window.setTimeout(() => {
         fetchHeaderNotifications()
-      }, 1200)
+      }, 2500)
 
       alarmPollTimer = window.setInterval(() => {
         fetchHeaderNotifications()

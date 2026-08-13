@@ -40,7 +40,7 @@
               <span>风险区域热力图</span>
               <p class="panel-desc">颜色越偏红，表示该区域风险事件越集中；热点数表示本次统计纳入分析的位置点数量。</p>
             </div>
-            <el-tag type="danger">{{ heatmapPoints.length }} 个热点</el-tag>
+            <el-tag type="danger">{{ validHeatmapPoints.length }} 个热点</el-tag>
           </div>
         </template>
         <div class="heatmap-legend">
@@ -198,7 +198,20 @@ const statCards = computed(() => [
   { label: '传感器样本', value: overview.value.sensorCount ?? 0, sub: '当前保留数据总量' }
 ])
 
-const topHotspots = computed(() => [...heatmapPoints.value]
+// 青岛农业大学
+const DEFAULT_MAP_CENTER: [number, number] = [120.397571, 36.321143]
+
+const isValidMapPoint = (point: any) => {
+  const lng = Number(point?.lng)
+  const lat = Number(point?.lat)
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false
+  if (Math.abs(lng) < 0.01 && Math.abs(lat) < 0.01) return false
+  return lat >= 3 && lat <= 54 && lng >= 73 && lng <= 136
+}
+
+const validHeatmapPoints = computed(() => heatmapPoints.value.filter(isValidMapPoint))
+
+const topHotspots = computed(() => [...validHeatmapPoints.value]
   .sort((a, b) => (b.count ?? b.value ?? 0) - (a.count ?? a.value ?? 0))
   .slice(0, 5))
 
@@ -232,11 +245,14 @@ const loadDashboard = async (options: { silent?: boolean } = {}) => {
   const requestId = ++dashboardRequestId
   loading.value = true
   loadError.value = ''
+  // 地图与接口并行预热，避免数据到了还要再等高德 SDK
+  void ensureAmap().catch(() => {})
 
   try {
     const result = await fetchJson('/api/analytics/dashboard', {
-      retries: 2,
-      retryDelay: 600
+      retries: 5,
+      retryDelay: 300,
+      timeout: 20000
     })
     if (requestId !== dashboardRequestId) return
 
@@ -248,32 +264,32 @@ const loadDashboard = async (options: { silent?: boolean } = {}) => {
     deviceRanking.value = data.deviceRanking || []
     deviceHealth.value = data.deviceHealth || []
     heatmapPoints.value = data.heatmapPoints || []
+    // 数字先出来，立刻结束 stats loading；图表/地图异步补齐
+    loading.value = false
+    void renderCharts()
   } catch (error) {
     if (requestId !== dashboardRequestId) return
     console.error('加载看板失败', error)
-    loadError.value = '看板数据加载失败，可能是后端尚未就绪或网关超时'
+    loadError.value = '看板数据加载失败，网关繁忙时会自动重试'
     if (!options.silent) {
-      ElMessage.error('加载看板失败，正在自动重试…')
+      ElMessage.warning('看板加载较慢，正在自动重试…')
     }
+    // 重试期间保持 loading，避免先显示一排 0 再跳变
     scheduleDashboardRetry()
   } finally {
-    if (requestId === dashboardRequestId) {
+    if (requestId === dashboardRequestId && !retryTimer) {
       loading.value = false
     }
-  }
-
-  if (requestId !== dashboardRequestId) return
-  if (!loadError.value) {
-    void renderCharts()
   }
 }
 
 const scheduleDashboardRetry = () => {
   if (retryTimer) return
+  loading.value = true
   retryTimer = window.setTimeout(async () => {
     retryTimer = null
     await loadDashboard({ silent: true })
-  }, 2000)
+  }, 1200)
 }
 
 const initCharts = (echarts: EchartsModule) => {
@@ -334,7 +350,7 @@ const initMap = async () => {
   if (!window.AMap || !mapContainer.value || map) return
   map = new window.AMap.Map(mapContainer.value, {
     zoom: 12,
-    center: [116.4074, 39.9042],
+    center: DEFAULT_MAP_CENTER,
     viewMode: '2D'
   })
   map.addControl(new window.AMap.Scale())
@@ -398,15 +414,13 @@ const createHotspotMarkerContent = (point: any, index: number) => {
 const renderHotspotMarkers = () => {
   if (!map || !window.AMap) return
   clearHotspotMarkers()
-  hotspotMarkers = topHotspots.value
-    .filter(point => point.lng != null && point.lat != null)
-    .map((point, index) => new window.AMap.Marker({
-      position: [point.lng, point.lat],
-      anchor: 'bottom-center',
-      offset: new window.AMap.Pixel(0, 0),
-      content: createHotspotMarkerContent(point, index),
-      zIndex: 120 + index
-    }))
+  hotspotMarkers = topHotspots.value.map((point, index) => new window.AMap.Marker({
+    position: [point.lng, point.lat],
+    anchor: 'bottom-center',
+    offset: new window.AMap.Pixel(0, 0),
+    content: createHotspotMarkerContent(point, index),
+    zIndex: 120 + index
+  }))
   if (hotspotMarkers.length) {
     map.add(hotspotMarkers)
   }
@@ -414,12 +428,19 @@ const renderHotspotMarkers = () => {
 
 const updateHeatmap = () => {
   if (!heatmap || !map) return
-  const data = heatmapPoints.value.map(item => ({ lng: item.lng, lat: item.lat, count: item.value || item.count || 1 }))
+  const data = validHeatmapPoints.value.map(item => ({
+    lng: item.lng,
+    lat: item.lat,
+    count: item.value || item.count || 1
+  }))
   const max = data.length ? Math.max(...data.map(item => item.count || 1)) : 1
   heatmap.setDataSet({ data, max })
   renderHotspotMarkers()
-  if (data.length && map) {
-    map.setCenter([topHotspots.value[0]?.lng || data[0].lng, topHotspots.value[0]?.lat || data[0].lat])
+  if (data.length) {
+    const focus = topHotspots.value[0] || data[0]
+    map.setCenter([focus.lng, focus.lat])
+  } else {
+    map.setCenter(DEFAULT_MAP_CENTER)
   }
 }
 
