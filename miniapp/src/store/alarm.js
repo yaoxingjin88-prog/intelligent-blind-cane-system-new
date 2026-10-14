@@ -16,7 +16,9 @@ export const useAlarmStore = defineStore('alarm', () => {
       const res = await getAlarmList(params)
       alarmList.value = res.data || []
       // 计算未读数量
-      unreadCount.value = alarmList.value.filter(item => item.status === 'pending').length
+      unreadCount.value = alarmList.value.filter(item =>
+        item.status === 'pending' || item.status === '0' || item.status === '未处理'
+      ).length
       return res
     } catch (error) {
       console.error('获取报警列表失败', error)
@@ -36,10 +38,16 @@ export const useAlarmStore = defineStore('alarm', () => {
     }
   }
 
+  const isPendingStatus = (status) =>
+    status === 'pending' || status === '0' || status === '未处理' || status == null
+
   // 添加新报警（用于WebSocket推送）
   const addAlarm = (alarm) => {
+    if (!alarm) return
+    const exists = alarmList.value.some(item => item.id === alarm.id)
+    if (exists) return
     alarmList.value.unshift(alarm)
-    if (alarm.status === 'pending') {
+    if (isPendingStatus(alarm.status)) {
       unreadCount.value++
     }
   }
@@ -48,9 +56,10 @@ export const useAlarmStore = defineStore('alarm', () => {
   const updateAlarmStatus = (alarmId, status) => {
     const alarm = alarmList.value.find(item => item.id === alarmId)
     if (alarm) {
+      const wasPending = isPendingStatus(alarm.status)
       alarm.status = status
-      if (status !== 'pending' && alarm.status === 'pending') {
-        unreadCount.value--
+      if (wasPending && !isPendingStatus(status)) {
+        unreadCount.value = Math.max(0, unreadCount.value - 1)
       }
     }
   }

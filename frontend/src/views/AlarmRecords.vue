@@ -5,10 +5,15 @@
         <h2>告警记录</h2>
         <p>统一查看跌倒、低电量与围栏相关告警，并快速处理未完成事件</p>
       </div>
-      <el-button type="primary" @click="openAddAlarmRecordDialog">
-        <el-icon><Plus /></el-icon>
-        添加告警
-      </el-button>
+      <div class="hero-actions">
+        <el-tag v-if="filterDeviceId" type="warning" effect="plain" closable @close="clearDeviceFilter">
+          设备 {{ filterDeviceId }}
+        </el-tag>
+        <el-button type="primary" @click="openAddAlarmRecordDialog">
+          <el-icon><Plus /></el-icon>
+          添加告警
+        </el-button>
+      </div>
     </div>
 
     <div class="stats-grid">
@@ -19,11 +24,61 @@
       </div>
     </div>
 
+    <el-card class="app-filter-card" shadow="never">
+      <div class="app-filters-row">
+        <el-date-picker
+          v-model="timeRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          value-format="YYYY-MM-DD HH:mm:ss"
+          :default-time="defaultTimeRange"
+          class="filter-time"
+          clearable
+        />
+        <el-select
+          v-model="selectedDeviceId"
+          placeholder="全部设备"
+          clearable
+          filterable
+          class="filter-device"
+        >
+          <el-option
+            v-for="device in deviceOptions"
+            :key="device.deviceId"
+            :label="deviceLabel(device)"
+            :value="device.deviceId"
+          />
+        </el-select>
+        <el-select
+          v-model="selectedAlarmType"
+          placeholder="全部类型"
+          clearable
+          filterable
+          class="filter-select"
+        >
+          <el-option
+            v-for="type in alarmTypeOptions"
+            :key="type"
+            :label="type"
+            :value="type"
+          />
+        </el-select>
+        <el-select v-model="timeSort" class="filter-sort">
+          <el-option label="时间倒序" value="desc" />
+          <el-option label="时间正序" value="asc" />
+        </el-select>
+        <el-button @click="resetFilters">重置</el-button>
+      </div>
+    </el-card>
+
     <el-card class="alarm-records-card">
       <template #header>
         <div class="card-header">
           <div>
-            <span>告警列表</span>
+            <span>{{ listTitle }}</span>
+            <p v-if="selectedDeviceId" class="header-subtitle">当前按设备筛选，可点重置或关闭标签清除</p>
           </div>
           <el-tag type="primary" effect="plain">共 {{ total }} 条告警</el-tag>
         </div>
@@ -56,10 +111,15 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="190" align="center">
+        <el-table-column label="处理方" width="120" align="center">
+          <template #default="{ row }">
+            <span>{{ formatHandledBy(row.handledBy) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="200" align="center">
           <template #default="{ row }">
             <el-button v-if="isUnhandled(row.status)" type="success" link size="small" @click="updateAlarmStatus(row.id, '1')">
-              <el-icon><Check /></el-icon>已处理
+              <el-icon><Check /></el-icon>兜底处理
             </el-button>
             <el-button type="danger" link size="small" @click="deleteAlarmRecord(row.id)">
               <el-icon><Delete /></el-icon>删除
@@ -90,9 +150,10 @@
         </el-form-item>
         <el-form-item label="告警类型" prop="alarmType">
           <el-select v-model="addAlarmRecordForm.alarmType" placeholder="请选择告警类型">
-            <el-option label="跌倒" value="跌倒" />
-            <el-option label="障碍物" value="障碍物" />
-            <el-option label="低电量" value="低电量" />
+            <el-option label="摔倒报警" value="摔倒报警" />
+            <el-option label="电子围栏越界报警" value="电子围栏越界报警" />
+            <el-option label="低电量报警" value="低电量报警" />
+            <el-option label="SOS求助" value="SOS求助" />
           </el-select>
         </el-form-item>
         <el-form-item label="告警时间" prop="alarmTime">
@@ -121,7 +182,8 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Plus, Check, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { fetchJson, apiFetch } from '../utils/http'
@@ -135,11 +197,31 @@ export default {
     Delete
   },
   setup() {
-    const alarmRecords = ref([])
-    const total = ref(0)
+    const route = useRoute()
+    const router = useRouter()
+    /** 接口原始列表（最近 200 条），筛选在前端完成 */
+    const allAlarmRecords = ref([])
+    const deviceOptions = ref([])
     const currentPage = ref(1)
     const pageSize = ref(10)
-    
+    const timeRange = ref(null)
+    /** 日期范围：开始 00:00:00，结束 23:59:59，便于按天筛选 */
+    const defaultTimeRange = [
+      new Date(2000, 1, 1, 0, 0, 0),
+      new Date(2000, 1, 1, 23, 59, 59)
+    ]
+    const selectedDeviceId = ref('')
+    const selectedAlarmType = ref('')
+    const timeSort = ref('desc')
+    let syncingDeviceFromRoute = false
+
+    const routeDeviceId = computed(() => {
+      const raw = route.query.deviceId
+      const value = Array.isArray(raw) ? raw[0] : raw
+      return value ? String(value).trim() : ''
+    })
+    const filterDeviceId = computed(() => selectedDeviceId.value || '')
+
     const addDialogVisible = ref(false)
     
     const addAlarmRecordForm = ref({
@@ -158,13 +240,60 @@ export default {
     
     const addAlarmRecordFormRef = ref(null)
 
+    const PRESET_ALARM_TYPES = ['摔倒报警', '电子围栏越界报警', '低电量报警', 'SOS求助']
+
+    const deviceLabel = (device) => {
+      if (!device) return ''
+      const name = device.deviceName || device.deviceId
+      return name === device.deviceId ? device.deviceId : `${name}（${device.deviceId}）`
+    }
+
+    const alarmTypeOptions = computed(() => {
+      const fromData = allAlarmRecords.value
+        .map(item => item.alarmType)
+        .filter(Boolean)
+      return [...new Set([...PRESET_ALARM_TYPES, ...fromData])]
+    })
+
+    const filteredAlarmRecords = computed(() => {
+      const [startTime, endTime] = Array.isArray(timeRange.value) ? timeRange.value : [null, null]
+      let list = allAlarmRecords.value.filter((record) => {
+        if (selectedDeviceId.value && record.deviceId !== selectedDeviceId.value) return false
+        if (selectedAlarmType.value && record.alarmType !== selectedAlarmType.value) return false
+        const alarmTime = String(record.alarmTime || '')
+        if (startTime && alarmTime && alarmTime < startTime) return false
+        if (endTime && alarmTime && alarmTime > endTime) return false
+        return true
+      })
+      list = list.slice().sort((a, b) => {
+        const left = String(a.alarmTime || '')
+        const right = String(b.alarmTime || '')
+        const cmp = left.localeCompare(right)
+        return timeSort.value === 'asc' ? cmp : -cmp
+      })
+      return list
+    })
+
+    const total = computed(() => filteredAlarmRecords.value.length)
+
+    const listTitle = computed(() => {
+      if (selectedDeviceId.value) return `设备 ${selectedDeviceId.value} 的告警`
+      return '告警列表'
+    })
+
     const paginatedAlarmRecords = computed(() => {
       const start = (currentPage.value - 1) * pageSize.value
       const end = start + pageSize.value
-      return alarmRecords.value.slice(start, end)
+      return filteredAlarmRecords.value.slice(start, end)
     })
 
     const isUnhandled = (status) => String(status) === '0' || status === '未处理'
+
+    const formatHandledBy = (handledBy) => {
+      if (handledBy === 'guardian') return '监护人'
+      if (handledBy === 'admin') return '管理端'
+      return handledBy || '-'
+    }
 
     const getStatusLabel = (status) => {
       if (String(status) === '1' || status === '已处理') return '已处理'
@@ -177,34 +306,45 @@ export default {
 
     const getAlarmTypeTagType = (alarmType) => {
       if (!alarmType) return 'info'
-      if (String(alarmType).includes('跌倒')) return 'danger'
+      if (String(alarmType).includes('摔') || String(alarmType).includes('跌倒')) return 'danger'
       if (String(alarmType).includes('低电')) return 'warning'
       if (String(alarmType).includes('围栏')) return 'warning'
+      if (String(alarmType).includes('SOS')) return 'danger'
       return 'info'
     }
 
     const statCards = computed(() => {
-      const unhandledCount = alarmRecords.value.filter(record => isUnhandled(record.status)).length
-      const handledCount = total.value - unhandledCount
-      const deviceCount = new Set(alarmRecords.value.map(record => record.deviceId).filter(Boolean)).size
-      const latestAlarmTime = alarmRecords.value[0]?.alarmTime || '暂无记录'
+      const list = filteredAlarmRecords.value
+      const unhandledCount = list.filter(record => isUnhandled(record.status)).length
+      const handledCount = list.length - unhandledCount
+      const deviceCount = new Set(list.map(record => record.deviceId).filter(Boolean)).size
+      const latestAlarmTime = list[0]?.alarmTime || '暂无记录'
       return [
-        { label: '告警总数', value: total.value, sub: '当前系统中的告警记录总量' },
+        { label: '告警总数', value: list.length, sub: '当前筛选条件下的告警数量' },
         { label: '未处理告警', value: unhandledCount, sub: '需要尽快处理的事件数量' },
         { label: '已处理告警', value: handledCount, sub: '已完成处置的历史告警' },
         { label: '涉及设备', value: deviceCount, sub: `最近告警时间 ${latestAlarmTime}` }
       ]
     })
+
+    const fetchDevices = async () => {
+      try {
+        const data = await fetchJson('/api/devices', { retries: 1, retryDelay: 500 })
+        deviceOptions.value = data.data || []
+      } catch (error) {
+        console.error('获取设备列表失败:', error)
+        deviceOptions.value = []
+      }
+    }
     
     const fetchAlarmRecords = async () => {
       try {
-        // 管理页取最近 200 条；经 Vercel 反代时 payload 过大易超时 502
+        // 管理页取最近 200 条，设备/类型/时间在前端筛选
         const data = await fetchJson('/api/alarm-records?limit=200', {
           retries: 2,
           retryDelay: 700
         })
-        alarmRecords.value = (data.data || []).slice().sort((a, b) => String(b.alarmTime || '').localeCompare(String(a.alarmTime || '')))
-        total.value = alarmRecords.value.length
+        allAlarmRecords.value = data.data || []
         const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
         if (currentPage.value > maxPage) {
           currentPage.value = maxPage
@@ -213,6 +353,29 @@ export default {
         console.error('获取告警记录列表失败:', error)
         ElMessage.error('获取告警记录失败，请稍后重试')
       }
+    }
+
+    const syncDeviceQuery = (deviceId) => {
+      const nextQuery = { ...route.query }
+      if (deviceId) {
+        nextQuery.deviceId = deviceId
+      } else {
+        delete nextQuery.deviceId
+      }
+      router.replace({ path: '/alarm-records', query: nextQuery })
+    }
+
+    const clearDeviceFilter = () => {
+      selectedDeviceId.value = ''
+      syncDeviceQuery('')
+    }
+
+    const resetFilters = () => {
+      timeRange.value = null
+      selectedAlarmType.value = ''
+      timeSort.value = 'desc'
+      currentPage.value = 1
+      clearDeviceFilter()
     }
     
     const openAddAlarmRecordDialog = () => {
@@ -329,13 +492,36 @@ export default {
         stopAlarmPollingFn = null
       }
     }
-    onMounted(() => {
-      fetchAlarmRecords()
+    watch(routeDeviceId, (value) => {
+      if (selectedDeviceId.value === value) return
+      syncingDeviceFromRoute = true
+      selectedDeviceId.value = value
+      currentPage.value = 1
+      Promise.resolve().then(() => {
+        syncingDeviceFromRoute = false
+      })
+    }, { immediate: true })
+
+    watch(selectedDeviceId, (value) => {
+      currentPage.value = 1
+      if (syncingDeviceFromRoute) return
+      if ((value || '') !== routeDeviceId.value) {
+        syncDeviceQuery(value || '')
+      }
+    })
+
+    watch([timeRange, selectedAlarmType, timeSort], () => {
+      currentPage.value = 1
+    })
+
+    onMounted(async () => {
+      await Promise.all([fetchDevices(), fetchAlarmRecords()])
       startAlarmPolling()
       window.addEventListener('alarm-records-changed', onAlarmsChanged)
     })
     onActivated(() => {
       fetchAlarmRecords()
+      fetchDevices()
       startAlarmPolling()
     })
     onDeactivated(() => {
@@ -347,7 +533,18 @@ export default {
     })
     
     return {
-      alarmRecords,
+      filterDeviceId,
+      clearDeviceFilter,
+      resetFilters,
+      timeRange,
+      defaultTimeRange,
+      selectedDeviceId,
+      selectedAlarmType,
+      timeSort,
+      deviceOptions,
+      alarmTypeOptions,
+      deviceLabel,
+      listTitle,
       total,
       currentPage,
       pageSize,
@@ -358,6 +555,7 @@ export default {
       addAlarmRecordRules,
       addAlarmRecordFormRef,
       isUnhandled,
+      formatHandledBy,
       getStatusLabel,
       getStatusTagType,
       getAlarmTypeTagType,
@@ -389,6 +587,13 @@ export default {
     justify-content: space-between;
     align-items: center;
     gap: 16px;
+  }
+
+  .hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
   }
 
   .page-hero h2 {
@@ -523,5 +728,6 @@ export default {
     .card-header {
       flex-direction: column;
     }
+
   }
 </style>

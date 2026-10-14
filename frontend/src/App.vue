@@ -86,7 +86,12 @@
                   <el-tag type="danger" effect="light">{{ unreadAlarmCount }} 条未处理</el-tag>
                 </div>
                 <div v-if="latestUnhandledAlarms.length" class="notification-list">
-                  <div v-for="alarm in latestUnhandledAlarms" :key="alarm.id" class="notification-item" @click="goToAlarmRecords()">
+                  <div
+                    v-for="alarm in latestUnhandledAlarms"
+                    :key="alarm.id"
+                    class="notification-item"
+                    @click="handleHeaderAlarm(alarm)"
+                  >
                     <div class="notification-item__main">
                       <span class="notification-device">{{ alarm.deviceId || '未知设备' }}</span>
                       <el-tag :type="getAlarmTagType(alarm.alarmType)" effect="light" size="small">
@@ -94,10 +99,20 @@
                       </el-tag>
                     </div>
                     <span class="notification-time">{{ alarm.alarmTime || '-' }}</span>
+                    <span class="notification-action">点击处理</span>
                   </div>
                 </div>
                 <el-empty v-else description="暂无未处理告警" :image-size="72" />
                 <div class="notification-panel__footer">
+                  <el-button
+                    v-if="unreadAlarmCount"
+                    type="danger"
+                    text
+                    :loading="handlingAlarms"
+                    @click="handleAllHeaderAlarms"
+                  >
+                    全部标为已处理
+                  </el-button>
                   <el-button type="primary" text @click="goToAlarmRecords">查看全部告警</el-button>
                 </div>
               </div>
@@ -146,8 +161,12 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { House, User, Monitor, DataAnalysis, Bell, Guide, Fold, Expand, BellFilled, Setting, SwitchButton, ArrowDown } from '@element-plus/icons-vue'
-import { fetchJson } from './utils/http'
+import { ElMessage, ElNotification } from 'element-plus'
+import { fetchJson, apiFetch } from './utils/http'
 import { startVisibilityInterval } from './utils/visibilityInterval'
+
+const ADMIN_WS_DEVICE_ID = '__admin_console__'
+const ALARM_TOAST_RECENT_MS = 5 * 60 * 1000
 
 export default {
   name: 'App',
@@ -162,6 +181,7 @@ export default {
     const isCollapse = ref(false)
     const currentUser = ref(JSON.parse(localStorage.getItem('user') || '{}'))
     const headerAlarmRecords = ref([])
+    const handlingAlarms = ref(false)
     const cachedViews = [
       'Dashboard',
       'Users',
@@ -173,6 +193,11 @@ export default {
       'AlarmRecords'
     ]
     let alarmPollTimer = null
+    let adminWs = null
+    let adminWsReconnectTimer = null
+    let adminWsUnmounted = false
+    const toastedAlarmIds = new Set()
+    let headerAlarmBootstrapped = false
 
     const menuNameMap = {
       '/': '首页',
@@ -200,6 +225,36 @@ export default {
       return 'info'
     }
 
+    const parseAlarmTimeMs = (alarm) => {
+      const raw = alarm?.alarmTime || alarm?.createTime
+      if (!raw) return null
+      const ms = Date.parse(String(raw).trim().replace('T', ' ').replace(/-/g, '/'))
+      return Number.isNaN(ms) ? null : ms
+    }
+
+    const isRecentAlarm = (alarm) => {
+      const at = parseAlarmTimeMs(alarm)
+      if (at == null) return false
+      return Date.now() - at <= ALARM_TOAST_RECENT_MS
+    }
+
+    /** 全局危险告警弹窗（任意管理页可见，不依赖实时监控页） */
+    const showGlobalAlarmToast = (alarm) => {
+      if (!alarm?.id) return
+      if (toastedAlarmIds.has(alarm.id)) return
+      // 已处理的不弹；status 缺省时仍弹（WS 刚推过来的新报警）
+      if (alarm.status != null && String(alarm.status) !== '0' && alarm.status !== '未处理') return
+      toastedAlarmIds.add(alarm.id)
+      const deviceLabel = alarm.deviceId || '未知设备'
+      ElNotification({
+        title: '设备报警',
+        message: `设备 ${deviceLabel} 发生${alarm.alarmType || '告警'}，请点击右上角铃铛处理。`,
+        type: 'error',
+        duration: 4500,
+        position: 'top-right'
+      })
+    }
+
     const fetchHeaderNotifications = async () => {
       if (!isLoggedIn.value) {
         headerAlarmRecords.value = []
@@ -210,11 +265,99 @@ export default {
           retries: 3,
           retryDelay: 400
         })
-        headerAlarmRecords.value = (data.data || [])
+        const list = (data.data || [])
           .sort((a, b) => String(b.alarmTime || '').localeCompare(String(a.alarmTime || '')))
+        // 轮询兜底：首次只建基线不弹窗，之后对新的近期未处理弹窗
+        if (headerAlarmBootstrapped) {
+          const prevIds = new Set(headerAlarmRecords.value.map(item => item.id))
+          list.forEach(alarm => {
+            if (!prevIds.has(alarm.id) && isRecentAlarm(alarm)) {
+              showGlobalAlarmToast(alarm)
+            }
+          })
+        } else {
+          headerAlarmBootstrapped = true
+          list.forEach(alarm => {
+            if (alarm?.id) toastedAlarmIds.add(alarm.id)
+          })
+        }
+        headerAlarmRecords.value = list
       } catch (error) {
         console.error('获取顶部告警通知失败:', error)
         // 失败时保留上一次数据，避免切页后铃铛被清空成“没数据”
+      }
+    }
+
+    const getAdminWsUrl = () => {
+      const envBase = import.meta.env.VITE_WS_BASE_URL
+      if (envBase) {
+        return `${String(envBase).replace(/\/$/, '')}/ws/alarm?deviceId=${ADMIN_WS_DEVICE_ID}`
+      }
+      if (import.meta.env.DEV) {
+        // 经 Vite /ws 代理，避免写死端口不一致
+        const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+        return `${proto}://${window.location.host}/ws/alarm?deviceId=${ADMIN_WS_DEVICE_ID}`
+      }
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+      return `${proto}://${window.location.host}/ws/alarm?deviceId=${ADMIN_WS_DEVICE_ID}`
+    }
+
+    const disconnectAdminAlarmWs = () => {
+      if (adminWsReconnectTimer) {
+        clearTimeout(adminWsReconnectTimer)
+        adminWsReconnectTimer = null
+      }
+      if (adminWs) {
+        try { adminWs.close() } catch (_) { /* ignore */ }
+        adminWs = null
+      }
+    }
+
+    const connectAdminAlarmWs = () => {
+      if (!isLoggedIn.value || adminWsUnmounted) return
+      disconnectAdminAlarmWs()
+      try {
+        adminWs = new WebSocket(getAdminWsUrl())
+      } catch (error) {
+        console.error('管理端报警 WebSocket 创建失败:', error)
+        adminWsReconnectTimer = setTimeout(connectAdminAlarmWs, 5000)
+        return
+      }
+      adminWs.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data)
+          if (message.type === 'ALARM' && message.alarm) {
+            showGlobalAlarmToast(message.alarm)
+            fetchHeaderNotifications()
+            return
+          }
+          if (message.type === 'ALARM_HANDLED' && message.alarm) {
+            // 监护人已处理：清铃铛对应项并弱提示
+            const alarmId = message.alarm.id
+            if (alarmId != null) {
+              headerAlarmRecords.value = headerAlarmRecords.value.filter(item => item.id !== alarmId)
+              toastedAlarmIds.add(alarmId)
+            }
+            ElNotification({
+              title: '报警已处理',
+              message: message.message || '家属端已处理该报警',
+              type: 'success',
+              duration: 3500,
+              position: 'top-right'
+            })
+            window.dispatchEvent(new CustomEvent('alarm-records-changed'))
+          }
+        } catch (error) {
+          console.error('解析管理端报警消息失败:', error)
+        }
+      }
+      adminWs.onerror = () => {
+        // onclose 会重连
+      }
+      adminWs.onclose = () => {
+        adminWs = null
+        if (adminWsUnmounted || !isLoggedIn.value) return
+        adminWsReconnectTimer = setTimeout(connectAdminAlarmWs, 5000)
       }
     }
 
@@ -222,12 +365,67 @@ export default {
       router.push('/alarm-records')
     }
 
+    /** 铃铛里点一条 = 标已处理，红点随之减少 */
+    const handleHeaderAlarm = async (alarm) => {
+      if (!alarm?.id || handlingAlarms.value) return
+      handlingAlarms.value = true
+      try {
+        const response = await apiFetch(`/api/alarm-records/${alarm.id}/handle`, { method: 'PUT' })
+        const data = await response.json()
+        if (data.code !== 200) {
+          ElMessage.error(data.msg || '处理失败')
+          return
+        }
+        headerAlarmRecords.value = headerAlarmRecords.value.filter(item => item.id !== alarm.id)
+        window.dispatchEvent(new CustomEvent('alarm-records-changed'))
+        ElMessage.success('已处理该告警')
+      } catch (error) {
+        console.error('处理顶部告警失败:', error)
+        ElMessage.error('处理告警失败')
+      } finally {
+        handlingAlarms.value = false
+      }
+    }
+
+    /** 一键清空铃铛未处理（标已处理） */
+    const handleAllHeaderAlarms = async () => {
+      const list = [...headerAlarmRecords.value]
+      if (!list.length || handlingAlarms.value) return
+      handlingAlarms.value = true
+      try {
+        let ok = 0
+        for (const alarm of list) {
+          if (!alarm?.id) continue
+          const response = await apiFetch(`/api/alarm-records/${alarm.id}/handle`, { method: 'PUT' })
+          const data = await response.json()
+          if (data.code === 200) ok += 1
+        }
+        headerAlarmRecords.value = []
+        window.dispatchEvent(new CustomEvent('alarm-records-changed'))
+        ElMessage.success(ok ? `已处理 ${ok} 条告警` : '没有可处理的告警')
+      } catch (error) {
+        console.error('批量处理顶部告警失败:', error)
+        ElMessage.error('批量处理失败')
+        await fetchHeaderNotifications()
+      } finally {
+        handlingAlarms.value = false
+      }
+    }
+
     // 监听登录状态变化
     const checkLoginStatus = () => {
-      isLoggedIn.value = localStorage.getItem('token') !== null
+      const loggedIn = localStorage.getItem('token') !== null
+      const wasLoggedIn = isLoggedIn.value
+      isLoggedIn.value = loggedIn
       currentUser.value = JSON.parse(localStorage.getItem('user') || '{}')
-      if (!isLoggedIn.value) {
+      if (!loggedIn) {
         headerAlarmRecords.value = []
+        headerAlarmBootstrapped = false
+        toastedAlarmIds.clear()
+        disconnectAdminAlarmWs()
+      } else if (!wasLoggedIn) {
+        connectAdminAlarmWs()
+        fetchHeaderNotifications()
       }
     }
 
@@ -239,6 +437,10 @@ export default {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       isLoggedIn.value = false
+      headerAlarmRecords.value = []
+      headerAlarmBootstrapped = false
+      toastedAlarmIds.clear()
+      disconnectAdminAlarmWs()
       router.push('/login')
     }
 
@@ -247,16 +449,19 @@ export default {
     }
 
     onMounted(() => {
+      adminWsUnmounted = false
       syncActiveMenu(router.currentRoute.value.path)
       checkLoginStatus()
       // 错开首页看板首屏请求，减少并发 502
       window.setTimeout(() => {
         fetchHeaderNotifications()
+        if (isLoggedIn.value) connectAdminAlarmWs()
       }, 2500)
 
+      // 轮询作 WS 兜底（红点 + 漏推时补弹窗）
       alarmPollTimer = startVisibilityInterval(() => {
         fetchHeaderNotifications()
-      }, 30000)
+      }, 15000)
       
       // 监听localStorage变化
       window.addEventListener('storage', checkLoginStatus)
@@ -271,6 +476,8 @@ export default {
     })
 
     onUnmounted(() => {
+      adminWsUnmounted = true
+      disconnectAdminAlarmWs()
       window.removeEventListener('storage', checkLoginStatus)
       window.removeEventListener('alarm-records-changed', fetchHeaderNotifications)
       if (alarmPollTimer) {
@@ -291,6 +498,9 @@ export default {
       getAlarmTagType,
       fetchHeaderNotifications,
       goToAlarmRecords,
+      handlingAlarms,
+      handleHeaderAlarm,
+      handleAllHeaderAlarms,
       logout,
       cachedViews
     }
@@ -569,9 +779,18 @@ html, body, #app {
   color: #64748b;
 }
 
+.notification-action {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #2563eb;
+}
+
 .notification-panel__footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
 }
 
 .user-avatar-wrapper {

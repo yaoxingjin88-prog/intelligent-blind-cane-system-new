@@ -33,13 +33,8 @@ public class SensorDataService {
     private static final double STATIONARY_RADIUS_METERS = 35.0;
     private static final long STATIONARY_THRESHOLD_MINUTES = 20L;
 
-    private final Map<String, String> lastGuardianAlertTypes = new ConcurrentHashMap<>();
-    /** 每设备最新一条（写穿，减少读库） */
-    private final Map<String, SensorData> latestByDevice = new ConcurrentHashMap<>();
-    /** 已确认存在的设备，避免每次上报都查 cane_device */
+    /** 已确认存在的设备，避免每次上报都查 cane_device（本机优化即可） */
     private final Set<String> knownDeviceIds = ConcurrentHashMap.newKeySet();
-    /** 静止起点：相对上次位置未明显移动则累计时长 */
-    private final Map<String, StationaryTracker> stationaryTrackers = new ConcurrentHashMap<>();
 
     private final SensorDataMapper sensorDataMapper;
     private final CaneDeviceMapper caneDeviceMapper;
@@ -47,6 +42,7 @@ public class SensorDataService {
     private final ElectronicFenceService electronicFenceService;
     private final AlarmNotifyService alarmNotifyService;
     private final AppCacheService appCacheService;
+    private final DeviceRuntimeStore deviceRuntimeStore;
 
     public List<SensorData> getAllSensorData() {
         return getRecentSensorData(1000);
@@ -82,12 +78,12 @@ public class SensorDataService {
         if (fromDb != null) {
             for (SensorData item : fromDb) {
                 if (item != null && item.getDeviceId() != null) {
-                    latestByDevice.put(item.getDeviceId(), item);
+                    deviceRuntimeStore.putLatest(item.getDeviceId(), item);
                 }
             }
             return fromDb;
         }
-        return new ArrayList<>(latestByDevice.values());
+        return deviceRuntimeStore.localLatestValues();
     }
 
     public int countAllSensorData() {
@@ -104,7 +100,7 @@ public class SensorDataService {
      * 1. 归一化加速度并判定跌倒
      * 2. 读取上一条，用于跌倒边沿去重
      * 3. 设备不存在则自动注册
-     * 4. 写入 sensor_data 并刷新内存最新值
+     * 4. 写入 sensor_data 并刷新运行时最新态（Redis/本机）
      * 5. 电子围栏判定 + WebSocket 推送
      * 6. 跌倒/越界边沿触发报警
      *
@@ -116,24 +112,30 @@ public class SensorDataService {
         String deviceId = sensorData.getDeviceId();
 
         // 步骤2：取上一条，供边沿判断
-        SensorData previousLatest = deviceId == null ? null : latestByDevice.get(deviceId);
+        SensorData previousLatest = deviceId == null ? null : deviceRuntimeStore.getLatest(deviceId);
         if (previousLatest == null && deviceId != null) {
             previousLatest = sensorDataMapper.getLatestByDeviceId(deviceId);
         }
 
-        // 步骤3：确保设备档案存在，并刷新心跳在线
+        // 步骤3：确保设备档案存在，并刷新心跳在线 / 可选电量
         ensureDeviceExists(deviceId);
         if (deviceId != null && !deviceId.isBlank()) {
             caneDeviceMapper.updateStatusByDeviceId(deviceId, "在线");
+            Integer battery = sensorData.getBatteryLevel();
+            if (battery != null) {
+                int clamped = Math.max(0, Math.min(100, battery));
+                sensorData.setBatteryLevel(clamped);
+                caneDeviceMapper.updateBatteryLevelByDeviceId(deviceId, clamped);
+            }
         }
 
-        // 步骤4：落库 + 写穿缓存
+        // 步骤4：落库 + 写穿运行时态
         sensorDataMapper.insert(sensorData);
         if (sensorData.getCreateTime() == null || sensorData.getCreateTime().isBlank()) {
             sensorData.setCreateTime(LocalDateTime.now().format(DATE_TIME_FORMATTER));
         }
         if (deviceId != null) {
-            latestByDevice.put(deviceId, sensorData);
+            deviceRuntimeStore.putLatest(deviceId, sensorData);
         }
 
         // 步骤5：围栏判定与实时推送（复用入参，避免再查 latest）
@@ -225,14 +227,7 @@ public class SensorDataService {
         String deviceId = latestSensorData.getDeviceId();
         Long stationaryMinutes = updateAndGetStationaryMinutes(latestSensorData);
 
-        if (Boolean.TRUE.equals(latestSensorData.getIsFall())) {
-            publishGuardianAlertOnce(deviceId, "FALL", "danger", "检测到跌倒异常，请家属尽快确认盲杖持有人当前状态。");
-            return;
-        }
-        if (fenceEvaluationResult != null && Boolean.TRUE.equals(fenceEvaluationResult.getTriggered())) {
-            publishGuardianAlertOnce(deviceId, "FENCE", "danger", "设备已离开设定守护区域，请及时联系并确认当前位置。");
-            return;
-        }
+        // 跌倒/越界的 GUARDIAN_ALERT 由 AlarmNotifyService 与落库同源推送，此处不再重复
 
         CaneDevice device = caneDeviceMapper.getDeviceByDeviceId(deviceId);
         if (device != null && device.getBatteryLevel() != null && device.getBatteryLevel() <= 20) {
@@ -245,15 +240,15 @@ public class SensorDataService {
                     "设备已连续静止约 " + stationaryMinutes + " 分钟，建议家属主动发起关怀确认。");
             return;
         }
-        lastGuardianAlertTypes.remove(deviceId);
+        deviceRuntimeStore.clearLastAlertType(deviceId);
     }
 
     private void publishGuardianAlertOnce(String deviceId, String alertType, String level, String message) {
-        String previousType = lastGuardianAlertTypes.get(deviceId);
+        String previousType = deviceRuntimeStore.getLastAlertType(deviceId);
         if (alertType.equals(previousType)) {
             return;
         }
-        lastGuardianAlertTypes.put(deviceId, alertType);
+        deviceRuntimeStore.putLastAlertType(deviceId, alertType);
         alarmWebSocketHandler.sendGuardianAlert(deviceId, alertType, level, message);
     }
 
@@ -270,15 +265,26 @@ public class SensorDataService {
             now = LocalDateTime.now();
         }
 
-        StationaryTracker tracker = stationaryTrackers.get(deviceId);
+        DeviceRuntimeStore.StationaryState tracker = deviceRuntimeStore.getStationary(deviceId);
         if (tracker == null
-                || GeoUtils.haversineMeters(tracker.lat, tracker.lng, current.getLatitude(), current.getLongitude())
+                || GeoUtils.haversineMeters(tracker.getLat(), tracker.getLng(), current.getLatitude(), current.getLongitude())
                 > STATIONARY_RADIUS_METERS) {
-            stationaryTrackers.put(deviceId, new StationaryTracker(current.getLatitude(), current.getLongitude(), now));
+            deviceRuntimeStore.putStationary(deviceId,
+                    DeviceRuntimeStore.StationaryState.of(
+                            current.getLatitude(), current.getLongitude(), now, DATE_TIME_FORMATTER));
             return null;
         }
 
-        long minutes = Math.max(0, Duration.between(tracker.since, now).toMinutes());
+        LocalDateTime since;
+        try {
+            since = LocalDateTime.parse(tracker.getSince(), DATE_TIME_FORMATTER);
+        } catch (Exception e) {
+            deviceRuntimeStore.putStationary(deviceId,
+                    DeviceRuntimeStore.StationaryState.of(
+                            current.getLatitude(), current.getLongitude(), now, DATE_TIME_FORMATTER));
+            return null;
+        }
+        long minutes = Math.max(0, Duration.between(since, now).toMinutes());
         return minutes >= STATIONARY_THRESHOLD_MINUTES ? minutes : null;
     }
 
@@ -309,13 +315,13 @@ public class SensorDataService {
         if (deviceId == null) {
             return null;
         }
-        SensorData cached = latestByDevice.get(deviceId);
+        SensorData cached = deviceRuntimeStore.getLatest(deviceId);
         if (cached != null) {
             return cached;
         }
         SensorData fromDb = sensorDataMapper.getLatestByDeviceId(deviceId);
         if (fromDb != null) {
-            latestByDevice.put(deviceId, fromDb);
+            deviceRuntimeStore.putLatest(deviceId, fromDb);
         }
         return fromDb;
     }
@@ -417,17 +423,5 @@ public class SensorDataService {
             return sensorDataMapper.getTrajectoryByTimeRange(deviceId, startTime, endTime);
         }
         return sensorDataMapper.getTrajectory(deviceId, 24);
-    }
-
-    private static final class StationaryTracker {
-        private final double lat;
-        private final double lng;
-        private final LocalDateTime since;
-
-        private StationaryTracker(double lat, double lng, LocalDateTime since) {
-            this.lat = lat;
-            this.lng = lng;
-            this.since = since;
-        }
     }
 }

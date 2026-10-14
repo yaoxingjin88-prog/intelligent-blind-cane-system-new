@@ -6,11 +6,12 @@
 
 **技术亮点**：
 - JWT 鉴权 + BCrypt 口令 + 硬件上报 `X-Device-Key` + 接口限流
-- 可选 Redis（限流 / 看板共享缓存），未启用时自动回退本机缓存
+- 可选 Redis（限流 / 看板缓存 / 设备最新态·告警去重·静止计时），未启用时自动回退本机
 - WebSocket 实时推送报警 / 围栏 / 过街辅助
-- 小程序接口按域拆分；设备「在线」按传感心跳判定（联调可用设备测试模拟）
+- 小程序接口按域拆分；设备「在线」按传感心跳判定（联调用假硬件模拟器）
 - 家庭监护圈：持杖用户 + 主监护人 + 子监护人；主监护人绑设备/邀请成员，子监护人可监视
 - 设备绑定：一人一台；专用 bind/unbind / 用户分配接口，普通更新设备不改归属
+- 报警闭环：创建同步推管理端+家属；结案记录处理方（guardian/admin）并互相同步
 
 ## 项目结构
 
@@ -50,7 +51,7 @@ intelligent-blind-cane-system/
 | JDK 17+ / Maven 3.9+ | 后端 |
 | Node.js 18+ | 前端 / 小程序 |
 | MySQL 8.0+ | 主库 |
-| Redis（可选） | 限流与看板缓存；本机已装可开启 |
+| Redis（可选） | 限流、看板缓存、设备运行时态；本机已装可开启 |
 
 ### 2. 数据库
 
@@ -128,7 +129,7 @@ python crossing_assist_demo.py --api-base http://127.0.0.1:8081/api --device-id 
 | Spring Boot | 3.3.3 | 主框架 |
 | MyBatis | 3.0.3 | 持久化 |
 | MySQL | 8.0 | 主库 |
-| Redis | （可选） | 限流、看板/监控总览缓存 |
+| Redis | （可选） | 限流、看板/监控缓存、设备运行时态 |
 | JWT (jjwt) | 0.12.3 | 登录令牌 |
 | spring-security-crypto | — | BCrypt |
 | Knife4j | 4.5.0 | OpenAPI 文档 |
@@ -151,18 +152,23 @@ Uni-app + uView Plus + Pinia；地图（微信 / 高德）。
 
 ## 核心功能
 
-- **设备**：档案、绑定、心跳在线（近 3 分钟上报或「设备测试」模拟中）、电量与健康度  
+- **设备**：档案、绑定、心跳在线（近 3 分钟有传感上报则在线）、电量与健康度  
 - **传感上报**：障碍距离、加速度、跌倒判定、GPS、温湿度；硬件头 `X-Device-Key`  
-- **报警**：跌倒 / 围栏越界 / 低电 / 静止等；WebSocket 推送  
+- **报警**：跌倒 / 围栏越界 / 低电 / 静止等；WebSocket 推送。监护人主责处理，管理端兜底；任一侧结案推送 `ALARM_HANDLED` 通知对端。二期（订阅消息/短信/超时升级等）见 [`docs/alarm-roadmap-phase2.md`](docs/alarm-roadmap-phase2.md)  
 - **电子围栏**：圆形围栏评估与状态推送  
 - **轨迹**：按时间查询与回放  
 - **过街辅助**：视觉模块 + 小程序演示 mock  
 - **AI**：DeepSeek 对话、百度 ASR/TTS  
 - **看板**：风险热力、活跃/电量/报警分布、设备排行与健康面板  
 
-### 设备「测试启动」说明
+### 假硬件模拟器（可控位置）
 
-管理端「设备测试」**不需要真硬件**：对库中设备档案定时伪造传感数据并走正式入库链路，用于联调看板 / 报警。停止测试后会落库离线；无硬件时请勿长期开着测试。
+打开（需先起管理端前端）：http://localhost:3000/hardware-simulator.html  
+
+- **先在设备页建档**，再用同一 `deviceId` 启动上报（等同真机心跳，无需后台「确认接收」）  
+- 可调经纬度、按米步进、一键移出围栏；越界报警由后台围栏判定  
+- 上报可带 `batteryLevel`，会回写设备电量  
+- 设备管理页已去掉「测试启动」，联调统一用模拟器；**勿用双击 file:// 打开**（会 CORS）；说明见 [`scripts/simulation/README.md`](scripts/simulation/README.md)
 
 ## 配置要点
 
@@ -171,7 +177,7 @@ Uni-app + uView Plus + Pinia；地图（微信 / 高德）。
 | `application-local.yml` | 本地密钥（已 gitignore），勿提交 |
 | `backend/application-example.env` | 环境变量示例 |
 | `app.security.*` | JWT、管理员、CORS、设备密钥、测试短信码开关 |
-| `app.redis.enabled` | 是否启用 Redis（默认 `false`） |
+| `app.redis.enabled` | 是否启用 Redis（默认 `false`；启用后含设备运行时态） |
 | `DEVICE_API_KEY` / `X-Device-Key` | 硬件上报鉴权（生产建议必填） |
 | `demo.location` | 小程序演示定位（开发可强制） |
 
@@ -187,8 +193,8 @@ Uni-app + uView Plus + Pinia；地图（微信 / 高德）。
 | `POST /api/devices/{id}/bind` | 绑定设备到用户（一人一台） |
 | `POST /api/devices/{id}/unbind` | 解绑设备 |
 | `PUT /api/users/{id}/device` | 用户侧分配/更换/清空绑定 |
-| `POST /api/devices/{id}/test/start\|stop` | 联调模拟启停 |
-| `POST /api/sensor-data` | 硬件传感上报 |
+| `POST /api/devices/{id}/test/start\|stop` | 服务端随机联调（保留 API；管理端 UI 已改用假硬件模拟器） |
+| `POST /api/sensor-data` | 硬件传感上报（可选 `batteryLevel` 回写电量） |
 | `GET /api/analytics/dashboard` | 数据看板（可 Redis 缓存） |
 | `GET /api/monitor/overview` | 实时监控总览（可 Redis 缓存） |
 | `/api/mini/**` | 小程序：登录、设备、围栏、报警、轨迹、关怀等 |
@@ -209,7 +215,7 @@ Uni-app + uView Plus + Pinia；地图（微信 / 高德）。
                     └──────────────┼──────────────┘
                                    │
               MySQL ◄──────────────┤
-              Redis（可选）◄────────┘  限流 + 看板缓存
+              Redis（可选）◄────────┘  限流 + 看板缓存 + 设备运行时态
 ```
 
 ## 演示账号
@@ -225,7 +231,8 @@ Uni-app + uView Plus + Pinia；地图（微信 / 高德）。
 
 ## 更新日志（摘录）
 
-- 可选 Redis：限流与看板/监控缓存；本地默认关闭，可 `app.redis.enabled=true` 开启  
+- 可选 Redis：限流、看板/监控缓存、设备最新态/告警去重/静止计时；本地默认关闭，可 `app.redis.enabled=true` 开启  
+
 - 安全加固：JWT、BCrypt 兼容、设备密钥、限流、生产配置校验、logback 滚动  
 - 小程序 Controller 拆分；设备在线按心跳；设备测试模拟竞态修复  
 - 配置迁至 `application.yml` + `dev`/`prod`；前端去掉未用 axios  

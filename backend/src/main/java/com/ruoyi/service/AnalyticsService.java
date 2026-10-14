@@ -37,6 +37,12 @@ public class AnalyticsService {
     private volatile DashboardCache dashboardCache;
     private volatile CompletableFuture<Map<String, Object>> loadingFuture;
 
+    /** 清掉本机 30s L1，配合 AppCache 淘汰后立刻刷新在线数 */
+    public void invalidateLocalCache() {
+        dashboardCache = null;
+        loadingFuture = null;
+    }
+
     private final CaneDeviceService caneDeviceService;
     private final SensorDataService sensorDataService;
     private final AlarmRecordService alarmRecordService;

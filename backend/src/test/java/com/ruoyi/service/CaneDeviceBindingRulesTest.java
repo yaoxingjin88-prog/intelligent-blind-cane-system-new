@@ -11,12 +11,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 
+import org.mockito.ArgumentCaptor;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * 一人一台、专用 bind/unbind、普通更新不改归属
+ * 一人一台、专用 bind/unbind、普通更新不改归属与运行态
  */
 @ExtendWith(MockitoExtension.class)
 class CaneDeviceBindingRulesTest {
@@ -44,16 +47,19 @@ class CaneDeviceBindingRulesTest {
     }
 
     @Test
-    void updateDeviceDoesNotChangeOwnership() {
+    void updateDeviceKeepsOwnershipAndRuntimeFields() {
         CaneDevice existing = new CaneDevice();
         existing.setId(9L);
         existing.setDeviceId("DEV_A");
         existing.setUserId(1L);
         existing.setDeviceName("盲杖");
+        existing.setBatteryLevel(55);
+        existing.setStatus("在线");
 
         CaneDevice update = new CaneDevice();
         update.setId(9L);
         update.setDeviceId("DEV_A");
+        update.setDeviceName("新名称");
         update.setUserId(2L);
         update.setBatteryLevel(80);
         update.setStatus("离线");
@@ -62,7 +68,13 @@ class CaneDeviceBindingRulesTest {
         when(deviceMapper.getDeviceByDeviceId("DEV_A")).thenReturn(existing);
 
         caneDeviceService.updateDevice(update);
-        verify(deviceMapper).update(update);
+
+        ArgumentCaptor<CaneDevice> captor = ArgumentCaptor.forClass(CaneDevice.class);
+        verify(deviceMapper).update(captor.capture());
+        CaneDevice saved = captor.getValue();
+        assertEquals("新名称", saved.getDeviceName());
+        assertEquals(55, saved.getBatteryLevel());
+        assertEquals("在线", saved.getStatus());
         verify(deviceMapper, never()).updateUserId(any(), any());
     }
 

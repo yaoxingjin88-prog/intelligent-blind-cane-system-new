@@ -39,9 +39,9 @@
             <span class="summary-value">{{ latestData?.createTime || '-' }}</span>
           </div>
           <div class="summary-item">
-            <span class="summary-label">最新报警</span>
-            <el-tag :type="latestAlarm && String(latestAlarm.status) === '0' ? 'danger' : 'info'">
-              {{ latestAlarm?.alarmType || '暂无报警' }}
+            <span class="summary-label">待处理报警</span>
+            <el-tag :type="pendingAlarm ? 'danger' : 'info'">
+              {{ pendingAlarm?.alarmType || '暂无' }}
             </el-tag>
           </div>
         </div>
@@ -235,24 +235,72 @@
 
             <el-tab-pane label="报警" name="alarm">
               <div class="tab-content">
-                <div class="section-block" v-if="latestAlarm">
+                <!-- 待处理：实时监控主责，突出操作 -->
+                <div class="section-block" v-if="pendingAlarm">
                   <div class="section-title alarm-header">
-                    <span>⚠️ 最新报警</span>
-                    <el-button @click="handleAlarm" type="primary" size="small">
+                    <span>⚠️ 待处理报警</span>
+                    <el-button @click="handleAlarm" type="danger" size="small">
                       处理报警
                     </el-button>
+                  </div>
+                  <div class="alarm-content">
+                    <p><strong>报警类型：</strong>{{ pendingAlarm.alarmType }}</p>
+                    <p><strong>报警时间：</strong>{{ pendingAlarm.alarmTime }}</p>
+                    <p><strong>处理状态：</strong>
+                      <el-tag type="danger">未处理</el-tag>
+                    </p>
+                  </div>
+                </div>
+                <!-- 已结案：仅作上下文，不占操作位 -->
+                <div class="section-block alarm-handled-block" v-else-if="latestAlarm">
+                  <div class="section-title">
+                    <span>最近已处理</span>
                   </div>
                   <div class="alarm-content">
                     <p><strong>报警类型：</strong>{{ latestAlarm.alarmType }}</p>
                     <p><strong>报警时间：</strong>{{ latestAlarm.alarmTime }}</p>
                     <p><strong>处理状态：</strong>
-                      <el-tag :type="String(latestAlarm.status) === '0' ? 'danger' : 'success'">
-                        {{ String(latestAlarm.status) === '0' ? '未处理' : '已处理' }}
-                      </el-tag>
+                      <el-tag type="success">已处理</el-tag>
+                    </p>
+                    <p v-if="handledByLabel">
+                      <strong>处理方：</strong>{{ handledByLabel }}
+                    </p>
+                    <p v-if="latestAlarm.handledAt">
+                      <strong>处理时间：</strong>{{ latestAlarm.handledAt }}
                     </p>
                   </div>
                 </div>
-                <el-empty v-else description="当前暂无报警" />
+                <el-empty v-else description="当前无待处理报警" :image-size="64" />
+
+                <!-- 本设备近期历史：不下钻全站列表也能回看 -->
+                <div class="section-block alarm-history-block">
+                  <div class="section-title">
+                    <span>本设备报警历史</span>
+                    <el-button type="primary" link size="small" @click="goToAlarmRecords">
+                      查看全部
+                    </el-button>
+                  </div>
+                  <div v-if="deviceAlarmHistory.length" class="alarm-history-list">
+                    <div
+                      v-for="item in deviceAlarmHistory"
+                      :key="item.id"
+                      class="alarm-history-item"
+                    >
+                      <div class="alarm-history-item__main">
+                        <el-tag
+                          size="small"
+                          :type="isAlarmPending(item.status) ? 'danger' : 'success'"
+                          effect="light"
+                        >
+                          {{ isAlarmPending(item.status) ? '未处理' : '已处理' }}
+                        </el-tag>
+                        <span class="alarm-history-type">{{ item.alarmType || '未知报警' }}</span>
+                      </div>
+                      <span class="alarm-history-time">{{ item.alarmTime || '-' }}</span>
+                    </div>
+                  </div>
+                  <el-empty v-else description="暂无历史记录" :image-size="48" />
+                </div>
               </div>
             </el-tab-pane>
           </el-tabs>
@@ -266,7 +314,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { startVisibilityInterval } from '../utils/visibilityInterval'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElNotification } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import axios from '../utils/request'
 import { ensureAmap } from '../utils/amap'
@@ -296,6 +344,8 @@ const address = ref('')
 const showTrajectory = ref(false)
 const trajectoryData = ref<any[]>([])
 const latestAlarm = ref<any>(null)
+/** 本设备近期报警（含已处理），用于报警 Tab 历史列表 */
+const deviceAlarmHistory = ref<any[]>([])
 const crossingAssist = ref<any>({})
 const fence = ref<any>(null)
 const fenceList = ref<any[]>([])
@@ -326,6 +376,26 @@ const fenceDistanceText = computed(() => {
     return '-'
   }
   return `${Number(fenceStatus.value.distanceMeters).toFixed(1)} m`
+})
+
+/** 与后端 AlarmStatus 一致：0/未处理/pending 为待处理 */
+const isAlarmPending = (status: unknown) => {
+  const value = String(status ?? '')
+  return value === '0' || value === '未处理' || value.toLowerCase() === 'pending'
+}
+
+/** 顶栏与操作区只关心待处理；已结案不抢操作位 */
+const pendingAlarm = computed(() => {
+  const alarm = latestAlarm.value
+  return alarm && isAlarmPending(alarm.status) ? alarm : null
+})
+
+const handledByLabel = computed(() => {
+  const by = latestAlarm.value?.handledBy
+  if (!by) return ''
+  if (by === 'admin') return '管理端'
+  if (by === 'guardian') return '监护人'
+  return String(by)
 })
 
 const fallConfidenceText = computed(() => {
@@ -409,11 +479,6 @@ let isPageUnmounted = false
 let refreshTimer: any = null
 let stopRefreshPoll: (() => void) | null = null
 let alarmCheckTimer: any = null
-let activeAlarmNotification: any = null
-let lastAlarmNotificationAt = 0
-let lastAlarmSoundAt = 0
-const notifiedAlarmKeys = new Set<string>()
-const ALARM_NOTIFICATION_COOLDOWN_MS = 10000
 
 // 返回设备列表
 const goBack = () => {
@@ -564,6 +629,11 @@ const loadTrajectory = async () => {
   }
 }
 
+/** 与设备列表一致：以接口按心跳计算后的 status 为准（勿把「接口成功/WS 已连」当成设备在线） */
+const applyDeviceStatus = (status?: string | null) => {
+  deviceStatus.value = status === '在线' ? '在线' : '离线'
+}
+
 // 获取设备信息
 const loadDeviceInfo = async () => {
   try {
@@ -574,6 +644,7 @@ const loadDeviceInfo = async () => {
       if (!deviceInfo.value.deviceName) {
         deviceInfo.value.deviceName = `智能设备 ${response.data.data?.deviceId || ''}`
       }
+      applyDeviceStatus(deviceInfo.value?.status)
     }
   } catch (error) {
     console.error('获取设备信息失败', error)
@@ -781,7 +852,7 @@ const saveFence = async () => {
   }
 }
 
-// 刷新最新位置
+// 刷新最新位置（在线状态单独按设备心跳刷新，不因拉到历史数据而标在线）
 const refreshLocation = async () => {
   if (!deviceInfo.value?.deviceId) return
   try {
@@ -793,8 +864,9 @@ const refreshLocation = async () => {
     })
     if (sensorResponse.data.code === 200) {
       latestData.value = sensorResponse.data.data || {}
-      deviceStatus.value = '在线'
     }
+    // 与设备列表同一套心跳判定
+    await loadDeviceInfo()
 
     const locationResponse = await axios.get(`/api/mini/devices/${deviceInfo.value.deviceId}/location`, {
       params: { _t: Date.now() }
@@ -827,94 +899,52 @@ const refreshLocation = async () => {
   }
 }
 
-// 检查最新报警
-const checkLatestAlarm = async () => {
+const syncLatestFromHistory = () => {
+  latestAlarm.value = deviceAlarmHistory.value[0] || null
+}
+
+/** 拉取本设备报警历史，并同步「最新一条」 */
+const loadDeviceAlarmHistory = async () => {
   if (!deviceInfo.value?.deviceId) return
   try {
-    const response = await axios.get(`/api/alarm-records/latest`, {
+    const response = await axios.get('/api/alarm-records', {
       params: {
-        deviceId: deviceInfo.value?.deviceId,
+        deviceId: deviceInfo.value.deviceId,
+        limit: 10,
         _t: Date.now()
       }
     })
     if (response.data.code === 200) {
-      const alarm = response.data.data
-      if (alarm && String(alarm.status) === '0' && alarm.id !== latestAlarm.value?.id) {
-        latestAlarm.value = alarm
-        showAlarmNotification(alarm)
-      }
+      deviceAlarmHistory.value = Array.isArray(response.data.data) ? response.data.data : []
+      syncLatestFromHistory()
     }
   } catch (error) {
-    console.error('检查报警失败', error)
+    console.error('加载设备报警历史失败', error)
   }
 }
 
-// 显示报警通知
-const showAlarmNotification = (alarm: any) => {
-  if (!alarm || String(alarm.status) !== '0') return
-  const alarmKey = `${alarm.id ?? 'unknown'}-${alarm.alarmType ?? ''}-${alarm.alarmTime ?? ''}`
-  if (notifiedAlarmKeys.has(alarmKey)) return
-
-  const now = Date.now()
-  if (now - lastAlarmNotificationAt < ALARM_NOTIFICATION_COOLDOWN_MS) {
-    notifiedAlarmKeys.add(alarmKey)
-    return
-  }
-
-  notifiedAlarmKeys.add(alarmKey)
-  lastAlarmNotificationAt = now
-  activeAlarmNotification?.close?.()
-
-  let notificationInstance: any = null
-  notificationInstance = ElNotification({
-    title: '⚠️ 设备报警',
-    message: `设备 ${deviceInfo.value.deviceName || deviceInfo.value.deviceId || ''} 发生${alarm.alarmType}，请在右侧“最新报警”中处理。`,
-    type: 'error',
-    duration: 3500,
-    position: 'top-right',
-    onClose: () => {
-      if (activeAlarmNotification === notificationInstance) {
-        activeAlarmNotification = null
-      }
-    }
-  })
-  activeAlarmNotification = notificationInstance
-
-  playAlarmSound()
+// 兼容旧轮询入口：改为刷新历史列表
+const checkLatestAlarm = async () => {
+  await loadDeviceAlarmHistory()
 }
 
-// 播放报警音效
-const playAlarmSound = () => {
-  const now = Date.now()
-  if (now - lastAlarmSoundAt < ALARM_NOTIFICATION_COOLDOWN_MS) return
-  lastAlarmSoundAt = now
-  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-  if (!AudioContextClass) return
-  const audioContext = new AudioContextClass()
-  const oscillator = audioContext.createOscillator()
-  const gainNode = audioContext.createGain()
-  oscillator.type = 'sine'
-  oscillator.frequency.value = 880
-  gainNode.gain.value = 0.15
-  oscillator.connect(gainNode)
-  gainNode.connect(audioContext.destination)
-  oscillator.start()
-  setTimeout(() => {
-    oscillator.stop()
-    audioContext.close()
-  }, 300)
+const goToAlarmRecords = () => {
+  const deviceId = deviceInfo.value?.deviceId
+  router.push(deviceId
+    ? { path: '/alarm-records', query: { deviceId } }
+    : '/alarm-records')
 }
 
-// 处理报警
+// 处理报警（仅待处理可点）
 const handleAlarm = async () => {
-  if (!latestAlarm.value) return
-  
+  if (!pendingAlarm.value) return
+
   try {
-    const response = await axios.put(`/api/alarm-records/${latestAlarm.value.id}/handle`)
+    const response = await axios.put(`/api/alarm-records/${pendingAlarm.value.id}/handle`)
     if (response.data.code === 200) {
       ElMessage.success('报警已处理')
-      latestAlarm.value.status = 1
-      activeAlarmNotification?.close?.()
+      await loadDeviceAlarmHistory()
+      window.dispatchEvent(new CustomEvent('alarm-records-changed'))
     }
   } catch (error) {
     ElMessage.error('处理报警失败')
@@ -946,7 +976,11 @@ const connectWebSocket = () => {
 
     if (message.type === 'SENSOR_DATA') {
       latestData.value = message.sensorData
-      deviceStatus.value = '在线'
+      // 收到实时上报才标在线；位置刷新里会再对齐设备接口状态
+      applyDeviceStatus('在线')
+      if (deviceInfo.value) {
+        deviceInfo.value = { ...deviceInfo.value, status: '在线' }
+      }
       refreshLocation()
       if (showTrajectory.value) {
         loadTrajectory()
@@ -955,8 +989,16 @@ const connectWebSocket = () => {
         applyFenceStatus(message.fence)
       }
     } else if (message.type === 'ALARM') {
-      latestAlarm.value = message.alarm
-      showAlarmNotification(message.alarm)
+      // 实时推送视为当前事件：先标在线；弹窗交给 App 全局通道
+      applyDeviceStatus('在线')
+      if (deviceInfo.value) {
+        deviceInfo.value = { ...deviceInfo.value, status: '在线' }
+      }
+      loadDeviceAlarmHistory()
+    } else if (message.type === 'ALARM_HANDLED' && message.alarm) {
+      if (!deviceInfo.value?.deviceId || message.alarm.deviceId === deviceInfo.value.deviceId) {
+        loadDeviceAlarmHistory()
+      }
     } else if (message.type === 'FENCE_STATUS') {
       applyFenceStatus(message.fence)
     } else if (message.type === 'CROSSING_ASSIST') {
@@ -970,7 +1012,8 @@ const connectWebSocket = () => {
   
   ws.onclose = () => {
     if (isPageUnmounted) return
-    deviceStatus.value = '离线'
+    // 推送通道断开 ≠ 设备离线，按心跳重新取状态
+    loadDeviceInfo()
     wsReconnectTimer = setTimeout(connectWebSocket, 5000)
   }
 }
@@ -1011,7 +1054,6 @@ onUnmounted(() => {
   }
   if (alarmCheckTimer) clearInterval(alarmCheckTimer)
   if (wsReconnectTimer) clearTimeout(wsReconnectTimer)
-  activeAlarmNotification?.close?.()
   if (ws) {
     ws.close()
     ws = null
@@ -1176,6 +1218,59 @@ onUnmounted(() => {
 
 .alarm-header {
   color: #F56C6C;
+}
+
+.alarm-handled-block {
+  opacity: 0.92;
+}
+
+.alarm-handled-block .section-title {
+  color: #606266;
+}
+
+.alarm-history-block {
+  margin-top: 8px;
+  padding-top: 4px;
+  border-top: 1px dashed #e4e7ed;
+}
+
+.alarm-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.alarm-history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.alarm-history-item__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.alarm-history-type {
+  font-size: 13px;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alarm-history-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #909399;
 }
 
 .info-item {

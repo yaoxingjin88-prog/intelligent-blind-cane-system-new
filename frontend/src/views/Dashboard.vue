@@ -128,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ensureAmap } from '../utils/amap'
 import { fetchJson } from '../utils/http'
@@ -163,6 +163,9 @@ let echartsLib: EchartsModule | null = null
 let hotspotMarkers: any[] = []
 let dashboardRequestId = 0
 let retryTimer: ReturnType<typeof setTimeout> | null = null
+let lastLoadedAt = 0
+let stopDashboardPoll: (() => void) | null = null
+const DASHBOARD_STALE_MS = 10_000
 
 const ensureEcharts = async () => {
   if (!echartsLib) {
@@ -246,6 +249,7 @@ const loadDashboard = async (options: { silent?: boolean } = {}) => {
     deviceRanking.value = data.deviceRanking || []
     deviceHealth.value = data.deviceHealth || []
     heatmapPoints.value = data.heatmapPoints || []
+    lastLoadedAt = Date.now()
     // 数字先出来，立刻结束 stats loading；图表/地图异步补齐
     loading.value = false
     void renderCharts()
@@ -432,23 +436,58 @@ const handleResize = () => {
   alarmChart?.resize()
 }
 
+const loadDashboardIfStale = (force = false) => {
+  const stale = Date.now() - lastLoadedAt > DASHBOARD_STALE_MS
+  if (!force && !stale && overview.value?.deviceCount != null) {
+    return
+  }
+  void loadDashboard({ silent: true })
+}
+
+const startDashboardPoll = () => {
+  if (stopDashboardPoll) return
+  const tick = () => {
+    if (document.visibilityState === 'visible') {
+      loadDashboardIfStale(true)
+    }
+  }
+  const timer = window.setInterval(tick, 15_000)
+  const onVis = () => {
+    if (document.visibilityState === 'visible') {
+      loadDashboardIfStale()
+    }
+  }
+  document.addEventListener('visibilitychange', onVis)
+  stopDashboardPoll = () => {
+    window.clearInterval(timer)
+    document.removeEventListener('visibilitychange', onVis)
+    stopDashboardPoll = null
+  }
+}
+
 onMounted(async () => {
   // 登录后首次进入时，稍等布局稳定再拉数，减少偶发空数据
   await nextTick()
   requestAnimationFrame(() => {
     loadDashboard()
   })
+  startDashboardPoll()
   window.addEventListener('resize', handleResize)
 })
 
 onActivated(() => {
   handleResize()
-  if (!overview.value.deviceCount && !loadError.value) {
-    loadDashboard({ silent: true })
-    return
-  }
+  // keep-alive 切回首页时重新拉数（设备页在线状态会变，看板不能沿用旧缓存）
+  loadDashboardIfStale()
+  startDashboardPoll()
   if (activityChart || batteryChart || alarmChart) {
     handleResize()
+  }
+})
+
+onDeactivated(() => {
+  if (stopDashboardPoll) {
+    stopDashboardPoll()
   }
 })
 
@@ -457,6 +496,9 @@ onUnmounted(() => {
   if (retryTimer) {
     window.clearTimeout(retryTimer)
     retryTimer = null
+  }
+  if (stopDashboardPoll) {
+    stopDashboardPoll()
   }
   window.removeEventListener('resize', handleResize)
   activityChart?.dispose()

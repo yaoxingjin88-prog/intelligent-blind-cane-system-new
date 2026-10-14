@@ -31,6 +31,10 @@ public class SensorData {
     private Double temperature;
     /** 湿度（%） */
     private Double humidity;
+    /**
+     * 电量百分比 0-100（可选，不上 sensor_data 表；有值时回写 cane_device.battery_level）
+     */
+    private Integer batteryLevel;
     /** 设备侧采样时间 */
     private String dataTime;
     /** 入库时间 */

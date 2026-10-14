@@ -3,7 +3,7 @@
     <div class="page-hero">
       <div>
         <h2>设备管理</h2>
-        <p>集中查看设备状态、绑定用户、电量健康与测试模拟情况</p>
+        <p>集中查看设备状态、绑定用户与电量健康；联调请用假硬件模拟器</p>
       </div>
       <el-button type="primary" @click="openAddDeviceDialog">
         <el-icon><Plus /></el-icon>
@@ -24,7 +24,7 @@
         <div class="card-header">
           <div>
             <span>设备列表</span>
-            <p class="header-subtitle">支持快速进入实时监控、切换测试状态，并查看设备所属用户与电量概况</p>
+            <p class="header-subtitle">支持进入实时监控、编辑档案与绑定；可控上报见 /hardware-simulator.html</p>
           </div>
           <div class="card-header__actions">
             <el-button text type="primary" :loading="loading" @click="reloadDevices">刷新</el-button>
@@ -57,12 +57,9 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="所属用户" min-width="180">
+        <el-table-column label="所属用户" min-width="140">
           <template #default="{ row }">
-            <div class="user-main">
-              <strong>{{ row.userName || '未关联用户' }}</strong>
-              <span>用户ID：{{ row.userId || '-' }}</span>
-            </div>
+            <span>{{ row.userName || '未关联用户' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="电池电量" min-width="180">
@@ -85,25 +82,10 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="测试状态" width="120" align="center">
-          <template #default="{ row }">
-            <el-tag :type="isTesting(row.deviceId) ? 'warning' : 'info'" effect="light">
-              {{ isTesting(row.deviceId) ? '测试中' : '未启动' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="320" align="center">
+        <el-table-column label="操作" width="260" align="center">
           <template #default="{ row }">
             <el-button type="success" link size="small" @click="goToMonitor(row)">
               <el-icon><View /></el-icon>实时监控
-            </el-button>
-            <el-button
-              :type="isTesting(row.deviceId) ? 'warning' : 'primary'"
-              link
-              size="small"
-              @click="toggleDeviceTest(row)"
-            >
-              {{ isTesting(row.deviceId) ? '停止测试' : '测试启动' }}
             </el-button>
             <el-button type="primary" link size="small" @click="openEditDeviceDialog(row)">
               <el-icon><Edit /></el-icon>编辑
@@ -129,14 +111,17 @@
       </div>
     </el-card>
     
-    <!-- 添加设备对话框 -->
+    <!-- 添加设备对话框：电量/状态由上报与心跳产生，不可手填 -->
     <el-dialog v-model="addDialogVisible" title="添加设备">
       <el-form :model="addDeviceForm" :rules="addDeviceRules" ref="addDeviceFormRef" label-width="80px">
-        <el-form-item label="设备ID" prop="deviceId">
-          <el-input v-model="addDeviceForm.deviceId" placeholder="请输入设备ID" />
+        <el-form-item label="设备编号" prop="deviceId">
+          <el-input v-model="addDeviceForm.deviceId" placeholder="如 DEVICE001" />
         </el-form-item>
-        <el-form-item label="用户ID" prop="userId">
-          <el-select v-model="addDeviceForm.userId" placeholder="仅可选尚未绑设备的用户" clearable style="width: 100%">
+        <el-form-item label="设备名称">
+          <el-input v-model="addDeviceForm.deviceName" placeholder="可选，默认与编号相同" />
+        </el-form-item>
+        <el-form-item label="所属用户" prop="userId">
+          <el-select v-model="addDeviceForm.userId" placeholder="可选，仅显示尚未绑设备的用户" clearable style="width: 100%">
             <el-option
               v-for="user in addBindUserOptions"
               :key="user.id"
@@ -145,15 +130,12 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="电池电量" prop="batteryLevel">
-          <el-input v-model="addDeviceForm.batteryLevel" placeholder="请输入电池电量" type="number" />
-        </el-form-item>
-        <el-form-item label="状态" prop="status">
-          <el-select v-model="addDeviceForm.status" placeholder="请选择状态">
-            <el-option label="在线" value="在线" />
-            <el-option label="离线" value="离线" />
-          </el-select>
-        </el-form-item>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="电量与在线状态由设备上报/心跳自动更新，添加后默认为离线、电量 100%"
+        />
       </el-form>
       <template #footer>
         <span class="dialog-footer">
@@ -163,13 +145,16 @@
       </template>
     </el-dialog>
     
-    <!-- 编辑设备对话框 -->
+    <!-- 编辑设备：仅档案与绑定；电量/状态只读 -->
     <el-dialog v-model="editDialogVisible" title="编辑设备">
       <el-form :model="editDeviceForm" :rules="editDeviceRules" ref="editDeviceFormRef" label-width="80px">
-        <el-form-item label="设备ID" prop="deviceId">
-          <el-input v-model="editDeviceForm.deviceId" placeholder="请输入设备ID" />
+        <el-form-item label="设备编号" prop="deviceId">
+          <el-input v-model="editDeviceForm.deviceId" placeholder="如 DEVICE001" />
         </el-form-item>
-        <el-form-item label="用户ID" prop="userId">
+        <el-form-item label="设备名称">
+          <el-input v-model="editDeviceForm.deviceName" placeholder="设备显示名称" />
+        </el-form-item>
+        <el-form-item label="所属用户" prop="userId">
           <el-select
             v-model="editDeviceForm.userId"
             :placeholder="editDeviceForm.userId ? '清空即可解绑；已绑定不可直接改给他人' : '仅可选尚未绑设备的用户'"
@@ -184,15 +169,18 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="电池电量" prop="batteryLevel">
-          <el-input v-model="editDeviceForm.batteryLevel" placeholder="请输入电池电量" type="number" />
+        <el-form-item label="当前电量">
+          <el-input :model-value="`${Number(editDeviceForm.batteryLevel) || 0}%`" disabled />
         </el-form-item>
-        <el-form-item label="状态" prop="status">
-          <el-select v-model="editDeviceForm.status" placeholder="请选择状态">
-            <el-option label="在线" value="在线" />
-            <el-option label="离线" value="离线" />
-          </el-select>
+        <el-form-item label="在线状态">
+          <el-input :model-value="editDeviceForm.status || '未知'" disabled />
         </el-form-item>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="电量与状态只读，来自传感上报与心跳；联调请打开 /hardware-simulator.html"
+        />
       </el-form>
       <template #footer>
         <span class="dialog-footer">
@@ -227,7 +215,6 @@ export default {
     const total = ref(0)
     const currentPage = ref(1)
     const pageSize = ref(10)
-    const testingDeviceIds = ref([])
     const loading = ref(false)
     const loadError = ref('')
     let lastLoadedAt = 0
@@ -237,29 +224,26 @@ export default {
     
     const addDeviceForm = ref({
       deviceId: '',
-      userId: '',
-      batteryLevel: '',
-      status: ''
+      deviceName: '',
+      userId: ''
     })
     
     const editDeviceForm = ref({
       id: '',
       deviceId: '',
+      deviceName: '',
       userId: '',
       batteryLevel: '',
-      status: ''
+      status: '',
+      originalUserId: null
     })
     
     const addDeviceRules = ref({
-      deviceId: [{ required: true, message: '请输入设备ID', trigger: 'blur' }],
-      batteryLevel: [{ required: true, message: '请输入电池电量', trigger: 'blur' }],
-      status: [{ required: true, message: '请选择状态', trigger: 'blur' }]
+      deviceId: [{ required: true, message: '请输入设备编号', trigger: 'blur' }]
     })
     
     const editDeviceRules = ref({
-      deviceId: [{ required: true, message: '请输入设备ID', trigger: 'blur' }],
-      batteryLevel: [{ required: true, message: '请输入电池电量', trigger: 'blur' }],
-      status: [{ required: true, message: '请选择状态', trigger: 'blur' }]
+      deviceId: [{ required: true, message: '请输入设备编号', trigger: 'blur' }]
     })
     
     const addDeviceFormRef = ref(null)
@@ -273,14 +257,14 @@ export default {
 
     const statCards = computed(() => {
       const onlineCount = devices.value.filter(device => device.status === '在线').length
-      const testingCount = devices.value.filter(device => isTesting(device.deviceId)).length
+      const offlineCount = Math.max(0, total.value - onlineCount)
       const lowBatteryCount = devices.value.filter(device => Number(device.batteryLevel) <= 20).length
       const boundUserCount = devices.value.filter(device => device.userId).length
       return [
         { label: '设备总数', value: total.value, sub: '当前已录入系统的设备数量' },
-        { label: '在线设备', value: onlineCount, sub: `离线 ${total.value - onlineCount} 台` },
-        { label: '测试中设备', value: testingCount, sub: '正在进行模拟上报的设备' },
-        { label: '低电量设备', value: lowBatteryCount, sub: `已关联用户 ${boundUserCount} 台` }
+        { label: '在线设备', value: onlineCount, sub: `离线 ${offlineCount} 台` },
+        { label: '已关联用户', value: boundUserCount, sub: '已绑定持杖用户的设备数量' },
+        { label: '低电量设备', value: lowBatteryCount, sub: '电量 ≤ 20% 的设备' }
       ]
     })
 
@@ -357,7 +341,6 @@ export default {
         if (currentPage.value > maxPage) {
           currentPage.value = maxPage
         }
-        await fetchTestingDeviceIds()
         lastLoadedAt = Date.now()
       } catch (error) {
         console.error('获取设备列表失败:', error)
@@ -365,16 +348,6 @@ export default {
         ElMessage.error('获取设备列表失败，请稍后重试')
       } finally {
         loading.value = false
-      }
-    }
-
-    const fetchTestingDeviceIds = async () => {
-      try {
-        const data = await fetchJson('/api/devices/test/running')
-        testingDeviceIds.value = Array.isArray(data.data) ? data.data : []
-      } catch (error) {
-        console.error('获取测试设备状态失败:', error)
-        testingDeviceIds.value = []
       }
     }
 
@@ -389,17 +362,12 @@ export default {
       }
       await reloadDevices()
     }
-
-    const isTesting = (deviceId) => {
-      return testingDeviceIds.value.includes(deviceId)
-    }
     
     const openAddDeviceDialog = () => {
       addDeviceForm.value = {
         deviceId: '',
-        userId: '',
-        batteryLevel: '',
-        status: ''
+        deviceName: '',
+        userId: ''
       }
       addDialogVisible.value = true
     }
@@ -445,11 +413,11 @@ export default {
         if (valid) {
           try {
             // 转换数据类型
+            const deviceId = addDeviceForm.value.deviceId.toString().trim()
             const deviceData = {
-              ...addDeviceForm.value,
-              deviceId: addDeviceForm.value.deviceId.toString(),
-              userId: normalizeUserId(addDeviceForm.value.userId),
-              batteryLevel: parseInt(addDeviceForm.value.batteryLevel)
+              deviceId,
+              deviceName: (addDeviceForm.value.deviceName || deviceId).trim(),
+              userId: normalizeUserId(addDeviceForm.value.userId)
             }
             // 调用后端API添加设备
             const response = await apiFetch('/api/devices', {
@@ -483,10 +451,8 @@ export default {
             const devicePk = parseInt(editDeviceForm.value.id)
             const deviceData = {
               id: devicePk,
-              deviceId: editDeviceForm.value.deviceId.toString(),
-              deviceName: editDeviceForm.value.deviceName || editDeviceForm.value.deviceId.toString(),
-              batteryLevel: parseInt(editDeviceForm.value.batteryLevel),
-              status: editDeviceForm.value.status
+              deviceId: editDeviceForm.value.deviceId.toString().trim(),
+              deviceName: (editDeviceForm.value.deviceName || editDeviceForm.value.deviceId).toString().trim()
             }
             const response = await apiFetch('/api/devices', {
               method: 'PUT',
@@ -516,29 +482,6 @@ export default {
     
     const goToMonitor = (row) => {
       router.push(`/monitor/${row.id}`)
-    }
-
-    const toggleDeviceTest = async (row) => {
-      try {
-        // 先与后端同步，避免刷新后前端以为已停、实际还在跑，点按钮却变成再次启动
-        await fetchTestingDeviceIds()
-        const running = isTesting(row.deviceId)
-        const action = running ? 'stop' : 'start'
-        const response = await apiFetch(`/api/devices/${row.id}/test/${action}`, {
-          method: 'POST'
-        })
-        const data = await response.json()
-        if (data.code === 200) {
-          await fetchTestingDeviceIds()
-          await fetchDevices()
-          ElMessage.success(running ? '设备测试已停止' : '设备测试已启动（无真硬件，仅模拟上报）')
-        } else {
-          ElMessage.error((running ? '停止' : '启动') + '设备测试失败: ' + data.msg)
-        }
-      } catch (error) {
-        console.error('切换设备测试失败:', error)
-        ElMessage.error('切换设备测试失败')
-      }
     }
     
     const deleteDevice = async (id) => {
@@ -618,8 +561,6 @@ export default {
       addDevice,
       updateDevice,
       deleteDevice,
-      toggleDeviceTest,
-      isTesting,
       getStatusTagType,
       getBatteryStatus,
       handleSizeChange,

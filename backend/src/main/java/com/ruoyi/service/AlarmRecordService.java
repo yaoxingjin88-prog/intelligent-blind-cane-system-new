@@ -6,17 +6,23 @@ import com.ruoyi.entity.AlarmRecord;
 import com.ruoyi.mapper.AlarmRecordMapper;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 报警记录查询与状态更新
+ * 报警记录查询与状态更新。
+ * 处理约定：监护人主责，管理端兜底；结案后通知对端。
  */
 @Service
 @RequiredArgsConstructor
 public class AlarmRecordService {
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     private final AlarmRecordMapper alarmRecordMapper;
+    private final AlarmNotifyService alarmNotifyService;
 
     public List<AlarmRecord> getAllAlarmRecords() {
         return getRecentAlarmRecords(200);
@@ -94,7 +100,14 @@ public class AlarmRecordService {
         return alarmRecordMapper.pruneOlderThanKeepPerDevice(normalizedKeep);
     }
 
+    /**
+     * 裸更新状态：若改为已处理则按管理端兜底结案并通知
+     */
     public void updateAlarmStatus(Long id, String status) {
+        if (AlarmStatus.isHandled(status)) {
+            handleAlarm(id, AlarmNotifyService.HANDLED_BY_ADMIN);
+            return;
+        }
         alarmRecordMapper.updateStatus(id, status);
     }
 
@@ -103,12 +116,53 @@ public class AlarmRecordService {
     }
 
     /**
-     * 将报警标记为已处理
+     * 按设备查询报警历史
+     *
+     * @param deviceId 设备编号
+     * @param limit    条数上限，默认 50，最大 200
+     */
+    public List<AlarmRecord> getAlarmsByDeviceId(String deviceId, Integer limit) {
+        if (deviceId == null || deviceId.isBlank()) {
+            return List.of();
+        }
+        int normalized = limit == null ? 50 : Math.max(1, Math.min(limit, 200));
+        return alarmRecordMapper.getByDeviceId(deviceId.trim(), normalized);
+    }
+
+    /**
+     * 将报警标记为已处理（默认视为管理端兜底）
      *
      * @param id 报警主键
      */
     public void handleAlarm(Long id) {
-        alarmRecordMapper.updateStatus(id, AlarmStatus.HANDLED);
+        handleAlarm(id, AlarmNotifyService.HANDLED_BY_ADMIN);
+    }
+
+    /**
+     * 结案并通知对端
+     *
+     * @param id        报警主键
+     * @param handledBy admin|guardian
+     * @return 更新后的记录；已处理或不存在则返回当前库中记录
+     */
+    public AlarmRecord handleAlarm(Long id, String handledBy) {
+        AlarmRecord existing = alarmRecordMapper.getAlarmRecordById(id);
+        if (existing == null) {
+            throw new IllegalArgumentException("报警不存在");
+        }
+        if (AlarmStatus.isHandled(existing.getStatus())) {
+            return existing;
+        }
+        String by = (handledBy == null || handledBy.isBlank())
+                ? AlarmNotifyService.HANDLED_BY_ADMIN
+                : handledBy.trim();
+        String handledAt = LocalDateTime.now().format(DATE_TIME_FORMATTER);
+        alarmRecordMapper.updateHandled(id, AlarmStatus.HANDLED, by, handledAt);
+        existing.setStatus(AlarmStatus.HANDLED);
+        existing.setHandledBy(by);
+        existing.setHandledAt(handledAt);
+        alarmNotifyService.notifyAlarmHandled(existing, by);
+        return existing;
     }
 
     /**

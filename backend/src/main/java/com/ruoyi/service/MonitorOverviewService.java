@@ -29,6 +29,12 @@ public class MonitorOverviewService {
     private volatile OverviewCache cache;
     private volatile CompletableFuture<Map<String, Object>> loadingFuture;
 
+    /** 清掉本机短时 L1，设备离线后总览立刻刷新 */
+    public void invalidateLocalCache() {
+        cache = null;
+        loadingFuture = null;
+    }
+
     private final CaneDeviceService caneDeviceService;
     private final SensorDataService sensorDataService;
     private final AlarmRecordService alarmRecordService;

@@ -87,11 +87,20 @@ public class CaneDeviceService {
         return devices;
     }
 
-    /** 新增设备档案（可带初始归属；校验设备号与一人一台） */
+    /** 新增设备档案（可带初始归属；电量/状态由上报维护，入库给默认值） */
     public void addDevice(CaneDevice device) {
         validateDeviceCodeUnique(device, null);
         if (device.getUserId() != null && deviceMapper.countByUserId(device.getUserId()) > 0) {
             throw new IllegalArgumentException("该用户已绑定一台设备，每人仅可绑定一台");
+        }
+        if (device.getDeviceName() == null || device.getDeviceName().isBlank()) {
+            device.setDeviceName(device.getDeviceId());
+        }
+        if (device.getBatteryLevel() == null) {
+            device.setBatteryLevel(100);
+        }
+        if (device.getStatus() == null || device.getStatus().isBlank()) {
+            device.setStatus("离线");
         }
         deviceMapper.insert(device);
     }
@@ -102,8 +111,8 @@ public class CaneDeviceService {
     }
 
     /**
-     * 更新设备档案（编号/名称/电量/状态）。
-     * 归属 userId 不会被本接口修改，请使用 bind / unbind / assignUserDevice。
+     * 更新设备档案（仅编号/名称）。
+     * 电量、在线状态由传感上报与心跳维护；归属请用 bind / unbind。
      */
     public void updateDevice(CaneDevice device) {
         if (device == null || device.getId() == null) {
@@ -114,9 +123,12 @@ public class CaneDeviceService {
             throw new IllegalArgumentException("设备不存在");
         }
         validateDeviceCodeUnique(device, device.getId());
-        if (device.getDeviceName() == null) {
+        if (device.getDeviceName() == null || device.getDeviceName().isBlank()) {
             device.setDeviceName(existing.getDeviceName());
         }
+        // 禁止管理端手改运行态字段
+        device.setBatteryLevel(existing.getBatteryLevel());
+        device.setStatus(existing.getStatus());
         deviceMapper.update(device);
     }
 
@@ -212,6 +224,23 @@ public class CaneDeviceService {
     }
 
     /**
+     * 主动离线（假硬件停止 / 设备关机上报）：落库离线并停掉页内测试模拟，
+     * 列表心跳判定会忽略近 3 分钟残留传感，避免停止后仍显示在线。
+     *
+     * @param id 设备主键
+     */
+    public void markOffline(Long id) {
+        CaneDevice device = deviceMapper.getDeviceById(id);
+        if (device == null) {
+            throw new IllegalArgumentException("设备不存在");
+        }
+        if (device.getDeviceId() != null) {
+            deviceTestSimulationService.stopSimulation(device.getDeviceId());
+            deviceMapper.updateStatusByDeviceId(device.getDeviceId(), "离线");
+        }
+    }
+
+    /**
      * 启动设备联调模拟上报
      *
      * @param id 设备主键
@@ -282,8 +311,8 @@ public class CaneDeviceService {
                 continue;
             }
             // 正在联调测试 → 在线
-            // 已停止测试（库内已标离线）→ 立即离线，不再吃「3 分钟内模拟残留」
-            // 非离线且近 3 分钟有上报 → 在线（真硬件心跳）
+            // 已停止测试（库内已标离线）→ 立即离线，不吃模拟残留心跳
+            // 库非离线且近 3 分钟有入库 → 在线（真机上报会先把库写成「在线」）
             boolean testing = testingIds.contains(device.getDeviceId());
             boolean forcedOffline = isExplicitOffline(device.getStatus());
             boolean recent = !forcedOffline && isRecentHeartbeat(latestByDevice.get(device.getDeviceId()), now);
@@ -305,15 +334,16 @@ public class CaneDeviceService {
         if (latest == null) {
             return false;
         }
-        LocalDateTime pointTime = parseDateTime(latest.getDataTime());
+        // 优先用库入库时间（服务器本地时区）；设备 dataTime 可能是 UTC，易导致误判离线
+        LocalDateTime pointTime = parseDateTime(latest.getCreateTime());
         if (pointTime == null) {
-            pointTime = parseDateTime(latest.getCreateTime());
+            pointTime = parseDateTime(latest.getDataTime());
         }
         if (pointTime == null) {
             return false;
         }
-        long minutes = ChronoUnit.MINUTES.between(pointTime, now);
-        return minutes >= 0 && minutes <= ONLINE_THRESHOLD_MINUTES;
+        long minutes = Math.abs(ChronoUnit.MINUTES.between(pointTime, now));
+        return minutes <= ONLINE_THRESHOLD_MINUTES;
     }
 
     private LocalDateTime parseDateTime(String value) {

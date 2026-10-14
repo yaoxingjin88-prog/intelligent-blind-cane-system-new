@@ -5,6 +5,7 @@
 <script setup>
 import { onLaunch, onShow, onHide } from '@dcloudio/uni-app'
 import { WS_URL, BASE_URL } from '@/config/env'
+import { useAlarmStore } from '@/store/alarm'
 
 // ====== 全局 WebSocket ======
 let socketTask = null
@@ -193,8 +194,34 @@ const handleWsMessage = (msg) => {
       uni.reLaunch({ url: '/pages/ai-chat/ai-chat' })
       break
     case 'ALARM':
-      // 可选：收到报警也提示一下
-      uni.showToast({ title: msg.message || '收到报警', icon: 'none' })
+      // 新报警：提示 + 刷新本地报警 store（监护人主责处理）
+      try {
+        const store = useAlarmStore()
+        if (msg.alarm) {
+          store.addAlarm({
+            ...msg.alarm,
+            status: msg.alarm.status === '1' ? 'handled' : 'pending'
+          })
+        }
+      } catch (e) {}
+      try { uni.vibrateLong({ fail: () => {} }) } catch (e) {}
+      uni.showToast({ title: msg.message || '收到报警，请尽快处理', icon: 'none', duration: 2500 })
+      uni.$emit('alarm-updated', msg.alarm || null)
+      break
+    case 'ALARM_HANDLED':
+      // 管理端兜底或其他家属已结案
+      try {
+        const store = useAlarmStore()
+        if (msg.alarm?.id != null) {
+          store.updateAlarmStatus(msg.alarm.id, 'handled')
+        }
+      } catch (e) {}
+      uni.showToast({
+        title: msg.message || (msg.handledBy === 'admin' ? '管理端已处理该报警' : '报警已处理'),
+        icon: 'none',
+        duration: 2500
+      })
+      uni.$emit('alarm-updated', msg.alarm || null)
       break
     case 'CROSSING_ASSIST': {
       const app = getApp()

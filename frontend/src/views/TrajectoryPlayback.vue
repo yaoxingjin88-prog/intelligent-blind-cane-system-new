@@ -13,9 +13,14 @@
       </div>
     </div>
 
-    <el-card class="control-card">
-      <div class="controls-grid">
-        <el-select v-model="selectedDeviceId" filterable placeholder="请选择设备" class="control-item">
+    <el-card class="app-filter-card" shadow="never">
+      <div class="app-filters-row">
+        <el-select
+          v-model="selectedDeviceId"
+          filterable
+          placeholder="请选择设备"
+          class="filter-device"
+        >
           <el-option
             v-for="device in devices"
             :key="device.id"
@@ -23,7 +28,7 @@
             :value="device.deviceId"
           />
         </el-select>
-        <el-select v-model="selectedHours" class="control-item">
+        <el-select v-model="selectedHours" placeholder="时间范围" class="filter-hours">
           <el-option label="最近 1 小时" :value="1" />
           <el-option label="最近 3 小时" :value="3" />
           <el-option label="最近 6 小时" :value="6" />
@@ -445,7 +450,6 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.control-card,
 .panel,
 .stat-card {
   border-radius: 18px;
@@ -454,43 +458,36 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.96);
 }
 
-.controls-grid,
 .stats-grid {
   display: grid;
   gap: 16px;
 }
 
-.controls-grid {
-  grid-template-columns: 1.4fr 0.9fr auto;
-}
-
-.control-item {
-  width: 100%;
-}
-
 .playback-toolbar {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
   align-items: center;
-  margin-top: 18px;
-  padding-top: 18px;
-  border-top: 1px solid #e2e8f0;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #ebeef5;
 }
 
 .playback-actions {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
   align-items: center;
 }
 
 .speed-select {
-  width: 120px;
+  width: 100px;
 }
 
 .playback-slider {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
+  flex: 1;
+  min-width: 240px;
   gap: 12px;
   align-items: center;
 }
@@ -589,9 +586,6 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 
-  .playback-toolbar {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 768px) {
@@ -605,17 +599,21 @@ onUnmounted(() => {
     align-items: flex-start;
   }
 
-  .hero-actions,
-  .controls-grid,
-  .stats-grid {
-    grid-template-columns: 1fr;
+  .hero-actions {
     width: 100%;
   }
 
-  .playback-actions,
-  .playback-slider {
+  .stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .speed-select {
     width: 100%;
+  }
+
+  .playback-slider {
+    width: 100%;
+    min-width: 0;
   }
 
   .map-container,

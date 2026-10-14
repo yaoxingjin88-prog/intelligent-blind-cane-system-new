@@ -3,7 +3,7 @@
     <div class="page-hero">
       <div>
         <h2>实时监控中心</h2>
-        <p>集中查看多设备位置、在线状态、未处理告警与测试运行情况</p>
+        <p>集中查看多设备位置、在线状态与未处理告警</p>
       </div>
       <el-button type="primary" @click="refreshOverview">
         <el-icon><Refresh /></el-icon>
@@ -19,25 +19,47 @@
       </div>
     </div>
 
-    <el-card class="filter-card">
-      <div class="filters-row">
-        <el-input v-model="keyword" placeholder="搜索设备名 / 设备ID / 用户名" clearable class="filter-item" />
-        <el-select v-model="statusFilter" class="filter-item">
-          <el-option label="全部状态" value="all" />
+    <el-card class="app-filter-card" shadow="never">
+      <div class="app-filters-row">
+        <el-input
+          v-model="keyword"
+          placeholder="搜索设备名 / 设备ID / 用户名"
+          clearable
+          class="filter-search"
+        />
+        <el-select
+          v-model="deviceFilter"
+          placeholder="全部设备"
+          clearable
+          filterable
+          class="filter-device"
+        >
+          <el-option
+            v-for="device in deviceOptions"
+            :key="device.deviceId"
+            :label="deviceOptionLabel(device)"
+            :value="device.deviceId"
+          />
+        </el-select>
+        <el-select
+          v-model="statusFilter"
+          placeholder="全部状态"
+          clearable
+          class="filter-select"
+        >
           <el-option label="仅在线" value="online" />
           <el-option label="仅离线" value="offline" />
         </el-select>
-        <el-select v-model="alertFilter" class="filter-item">
-          <el-option label="全部告警状态" value="all" />
+        <el-select
+          v-model="alertFilter"
+          placeholder="全部告警"
+          clearable
+          class="filter-select"
+        >
           <el-option label="仅未处理告警" value="unhandled" />
           <el-option label="仅正常设备" value="normal" />
         </el-select>
-        <el-select v-model="testingFilter" class="filter-item">
-          <el-option label="全部测试状态" value="all" />
-          <el-option label="仅测试中" value="running" />
-          <el-option label="仅未测试" value="stopped" />
-        </el-select>
-        <el-button @click="resetFilters">重置筛选</el-button>
+        <el-button @click="resetFilters">重置</el-button>
       </div>
     </el-card>
 
@@ -107,7 +129,6 @@
               </div>
               <div class="device-item__meta">
                 <span>电量 {{ device.batteryLevel ?? '-' }}%</span>
-                <span>测试 {{ device.testing ? '运行中' : '未启动' }}</span>
                 <span>更新时间 {{ device.latestData?.createTime || '-' }}</span>
               </div>
               <div class="device-item__footer">
@@ -159,7 +180,7 @@
 </template>
 
 <script setup>
-import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
@@ -173,24 +194,40 @@ const router = useRouter()
 const mapContainerRef = ref(null)
 const devices = ref([])
 const alarms = ref([])
-const runningTestingIds = ref([])
 const keyword = ref('')
-const statusFilter = ref('all')
-const alertFilter = ref('all')
-const testingFilter = ref('all')
+/** 设备下拉筛选（可点 × 清空）；与地图选中 selectedDeviceId 分开 */
+const deviceFilter = ref('')
+const statusFilter = ref('')
+const alertFilter = ref('')
 const selectedDeviceId = ref(null)
+
+const deviceOptions = computed(() => devices.value
+  .filter(device => device?.deviceId)
+  .slice()
+  .sort((a, b) => String(a.deviceId).localeCompare(String(b.deviceId))))
+
+const deviceOptionLabel = (device) => {
+  const name = device.deviceName || device.deviceId
+  return name === device.deviceId ? device.deviceId : `${name}（${device.deviceId}）`
+}
 
 let map = null
 let mapMarkers = []
 let overviewTimer = null
+let mapResizeObserver = null
+
+const resizeMap = () => {
+  if (map && typeof map.resize === 'function') {
+    map.resize()
+  }
+}
 
 const isUnhandled = (status) => String(status) === '0' || status === '未处理'
 
-/** 与首页一致：后端心跳状态（近 3 分钟上报）或联调测试中 */
+/** 与首页一致：后端心跳状态（近 3 分钟有传感上报） */
 const isDeviceOnline = (device) => {
   const status = String(device?.status || '')
-  return device?.testing === true
-    || status === '在线'
+  return status === '在线'
     || status === 'active'
     || status === 'ACTIVE'
     || status.toLowerCase() === 'online'
@@ -204,19 +241,19 @@ const filteredDevices = computed(() => devices.value.filter((device) => {
   const keywordValue = keyword.value.trim().toLowerCase()
   const matchesKeyword = !keywordValue || [device.deviceName, device.deviceId, device.userName]
     .some(value => String(value || '').toLowerCase().includes(keywordValue))
+  const matchesDevice = !deviceFilter.value || device.deviceId === deviceFilter.value
   const online = isDeviceOnline(device)
   const hasUnhandledAlarm = Boolean(device.latestAlarm && isUnhandled(device.latestAlarm.status))
-  const matchesStatus = statusFilter.value === 'all'
-    || (statusFilter.value === 'online' && online)
-    || (statusFilter.value === 'offline' && !online)
-  const matchesAlert = alertFilter.value === 'all'
-    || (alertFilter.value === 'unhandled' && hasUnhandledAlarm)
-    || (alertFilter.value === 'normal' && !hasUnhandledAlarm)
-  const matchesTesting = testingFilter.value === 'all'
-    || (testingFilter.value === 'running' && device.testing)
-    || (testingFilter.value === 'stopped' && !device.testing)
+  const status = statusFilter.value || ''
+  const alert = alertFilter.value || ''
+  const matchesStatus = !status
+    || (status === 'online' && online)
+    || (status === 'offline' && !online)
+  const matchesAlert = !alert
+    || (alert === 'unhandled' && hasUnhandledAlarm)
+    || (alert === 'normal' && !hasUnhandledAlarm)
 
-  return matchesKeyword && matchesStatus && matchesAlert && matchesTesting
+  return matchesKeyword && matchesDevice && matchesStatus && matchesAlert
 }))
 
 const filteredPositionedDevices = computed(() => filteredDevices.value.filter(device => device.latestData?.longitude && device.latestData?.latitude))
@@ -240,9 +277,9 @@ const statCards = computed(() => {
   const fallRiskCount = devices.value.filter(device => Boolean(device.latestData?.isFall)).length
   return [
     { label: '设备总数', value: devices.value.length, sub: '当前纳入监控的设备数量' },
-    { label: '在线设备', value: onlineCount, sub: '近 3 分钟有传感上报或测试中' },
+    { label: '在线设备', value: onlineCount, sub: '近 3 分钟有传感上报' },
     { label: '未处理告警', value: unhandledAlarms.value.length, sub: '需要立即关注的告警事件' },
-    { label: '测试中设备', value: runningTestingIds.value.length, sub: `跌倒风险设备 ${fallRiskCount} 台` }
+    { label: '跌倒风险', value: fallRiskCount, sub: '最新传感数据标记跌倒的设备' }
   ]
 })
 
@@ -288,9 +325,9 @@ const selectDevice = (device) => {
 
 const resetFilters = () => {
   keyword.value = ''
-  statusFilter.value = 'all'
-  alertFilter.value = 'all'
-  testingFilter.value = 'all'
+  deviceFilter.value = ''
+  statusFilter.value = ''
+  alertFilter.value = ''
 }
 
 const goToDeviceMonitor = (device) => {
@@ -369,6 +406,12 @@ const initMap = async () => {
   map.addControl(new window.AMap.Scale())
   map.addControl(new window.AMap.ToolBar())
   renderMarkers()
+  await nextTick()
+  resizeMap()
+  if (typeof ResizeObserver !== 'undefined' && mapContainerRef.value && !mapResizeObserver) {
+    mapResizeObserver = new ResizeObserver(() => resizeMap())
+    mapResizeObserver.observe(mapContainerRef.value)
+  }
 }
 
 let overviewRequestId = 0
@@ -396,7 +439,6 @@ const refreshOverview = async () => {
     const enhanced = Array.isArray(payload.devices) ? payload.devices : []
     devices.value = enhanced
     alarms.value = Array.isArray(payload.alarms) ? payload.alarms : []
-    runningTestingIds.value = Array.isArray(payload.testingDeviceIds) ? payload.testingDeviceIds : []
 
     if (!selectedDeviceId.value || !enhanced.some(device => device.id === selectedDeviceId.value)) {
       selectedDeviceId.value = enhanced[0]?.id ?? null
@@ -420,6 +462,9 @@ onMounted(async () => {
 onActivated(async () => {
   if (!map) {
     await initMap()
+  } else {
+    await nextTick()
+    resizeMap()
   }
   await refreshOverview()
   if (!overviewTimer) {
@@ -455,6 +500,10 @@ onUnmounted(() => {
   if (overviewTimer) {
     overviewTimer()
     overviewTimer = null
+  }
+  if (mapResizeObserver) {
+    mapResizeObserver.disconnect()
+    mapResizeObserver = null
   }
   clearMarkers()
   if (map) {
@@ -526,33 +575,20 @@ onUnmounted(() => {
   color: #94a3b8;
 }
 
-.filter-card {
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
-}
-
-.filters-row {
-  display: grid;
-  grid-template-columns: 1.4fr repeat(3, minmax(0, 0.85fr)) auto;
-  gap: 12px;
-  align-items: center;
-}
-
-.filter-item {
-  width: 100%;
-}
 
 .content-grid {
   display: grid;
   grid-template-columns: 1.45fr 1fr;
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
+  min-height: 720px;
 }
 
 .side-stack {
   display: grid;
+  grid-template-rows: 1.35fr 0.85fr;
   gap: 20px;
+  min-height: 0;
 }
 
 .panel {
@@ -560,6 +596,36 @@ onUnmounted(() => {
   border: 1px solid rgba(148, 163, 184, 0.16);
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
   background-color: rgba(255, 255, 255, 0.96);
+}
+
+.panel-map {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.panel-map :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: 16px;
+}
+
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.side-panel :deep(.el-card__body) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .panel-header {
@@ -578,10 +644,16 @@ onUnmounted(() => {
 
 .map-wrapper {
   position: relative;
+  flex: 1;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
 }
 
 .map-container {
-  height: 620px;
+  flex: 1;
+  min-height: 480px;
+  height: 100%;
   border-radius: 16px;
   overflow: hidden;
 }
@@ -648,7 +720,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 420px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -754,16 +827,20 @@ onUnmounted(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .filters-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .content-grid {
     grid-template-columns: 1fr;
+    min-height: 0;
   }
 
+  .side-stack {
+    grid-template-rows: auto;
+  }
+
+  .map-wrapper,
   .map-container {
-    height: 520px;
+    min-height: 480px;
+    height: 480px;
+    flex: none;
   }
 }
 
@@ -781,10 +858,9 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 
-  .filters-row,
   .map-detail__actions {
-    grid-template-columns: 1fr;
-    display: grid;
+    display: flex;
+    flex-wrap: wrap;
   }
 
   .device-item__header,

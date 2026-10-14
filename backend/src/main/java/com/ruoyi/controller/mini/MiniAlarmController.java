@@ -58,11 +58,18 @@ public class MiniAlarmController {
      * @param data 含 status
      * @return 统一返回结果
      */
-    @Operation(summary = "处理报警")
+    @Operation(summary = "处理报警", description = "监护人主责结案；通知管理端与其他家属端")
     @PutMapping("/alarms/{id}/handle")
-    public Result handleAlarm(@PathVariable Long id, @RequestBody Map<String, String> data) {
-        String status = data.get("status");
-        // 调用业务层更新状态
+    public Result handleAlarm(@PathVariable Long id, @RequestBody(required = false) Map<String, String> data) {
+        String status = data == null ? null : data.get("status");
+        // 忽略/已处理/1 均视为监护人结案
+        if (status == null || status.isBlank()
+                || "1".equals(status) || "handled".equalsIgnoreCase(status)
+                || "ignored".equalsIgnoreCase(status) || "已处理".equals(status)) {
+            var record = support.alarmRecordService().handleAlarm(id, com.ruoyi.service.AlarmNotifyService.HANDLED_BY_GUARDIAN);
+            log.info("alarm.handle.guardian id={}", id);
+            return Result.success(record);
+        }
         support.alarmRecordService().updateAlarmStatus(id, status);
         log.info("alarm.handle id={} status={}", id, status);
         return Result.success();
@@ -118,9 +125,8 @@ public class MiniAlarmController {
     @Operation(summary = "标记消息已读")
     @PutMapping("/messages/{id}/read")
     public Result markMessageRead(@PathVariable Long id) {
-        // 调用业务层将对应告警标记已处理
-        support.alarmRecordService().handleAlarm(id);
-        log.info("alarm.messageRead id={}", id);
+        support.alarmRecordService().handleAlarm(id, com.ruoyi.service.AlarmNotifyService.HANDLED_BY_GUARDIAN);
+        log.info("alarm.messageRead.guardian id={}", id);
         return Result.success();
     }
 

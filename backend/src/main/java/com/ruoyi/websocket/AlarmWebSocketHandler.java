@@ -262,13 +262,42 @@ public class AlarmWebSocketHandler extends TextWebSocketHandler {
         message.put("alarm", alarmRecord);
         message.put("message", "设备发生" + alarmRecord.getAlarmType() + "，请及时处理！");
         message.put("timestamp", System.currentTimeMillis());
+        broadcastToAll(message);
+    }
 
+    /**
+     * 向指定设备会话推送「报警已处理」（家属端）
+     */
+    public void sendAlarmHandled(String deviceId, AlarmRecord alarmRecord, String handledBy, String messageText) {
+        Map<String, Object> message = buildAlarmHandledPayload(alarmRecord, handledBy, messageText);
+        sendToDevice(deviceId, message);
+    }
+
+    /**
+     * 广播「报警已处理」（管理端铃铛/监控页）
+     */
+    public void broadcastAlarmHandled(AlarmRecord alarmRecord, String handledBy, String messageText) {
+        broadcastToAll(buildAlarmHandledPayload(alarmRecord, handledBy, messageText));
+    }
+
+    private Map<String, Object> buildAlarmHandledPayload(AlarmRecord alarmRecord, String handledBy, String messageText) {
+        Map<String, Object> message = new HashMap<>();
+        message.put("type", "ALARM_HANDLED");
+        message.put("alarm", alarmRecord);
+        message.put("deviceId", alarmRecord == null ? null : alarmRecord.getDeviceId());
+        message.put("handledBy", handledBy);
+        message.put("message", messageText);
+        message.put("timestamp", System.currentTimeMillis());
+        return message;
+    }
+
+    private void broadcastToAll(Map<String, Object> message) {
         sessions.values().forEach(deviceSessions -> deviceSessions.values().forEach(session -> {
             if (session.isOpen()) {
                 try {
                     sendMessage(session, message);
                 } catch (Exception e) {
-                    log.error("广播报警通知失败", e);
+                    log.error("广播 WebSocket 消息失败 type={}", message.get("type"), e);
                 }
             }
         }));

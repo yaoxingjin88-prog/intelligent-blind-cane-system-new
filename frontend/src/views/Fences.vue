@@ -22,15 +22,20 @@
       </div>
     </div>
 
-    <el-card class="filter-card">
-      <div class="filters-row">
-        <el-input v-model="keyword" placeholder="搜索设备ID / 围栏名称 / 用户名" clearable class="filter-item" />
-        <el-select v-model="statusFilter" class="filter-item">
+    <el-card class="app-filter-card" shadow="never">
+      <div class="app-filters-row">
+        <el-input
+          v-model="keyword"
+          placeholder="搜索设备ID / 围栏名称 / 用户名"
+          clearable
+          class="filter-search"
+        />
+        <el-select v-model="statusFilter" placeholder="启用状态" class="filter-select">
           <el-option label="全部启用状态" value="all" />
           <el-option label="仅启用" value="enabled" />
           <el-option label="仅停用" value="disabled" />
         </el-select>
-        <el-select v-model="boundaryFilter" class="filter-item">
+        <el-select v-model="boundaryFilter" placeholder="边界状态" class="filter-select">
           <el-option label="全部边界状态" value="all" />
           <el-option label="仅已越界" value="outside" />
           <el-option label="仅安全区内" value="inside" />
@@ -644,7 +649,6 @@ onUnmounted(() => {
 }
 
 .stat-card,
-.filter-card,
 .table-card {
   border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.16);
@@ -672,16 +676,6 @@ onUnmounted(() => {
 .stat-sub {
   font-size: 12px;
   color: #94a3b8;
-}
-
-.filters-row {
-  display: grid;
-  grid-template-columns: 1.4fr repeat(2, minmax(0, 0.9fr)) auto;
-  gap: 12px;
-}
-
-.filter-item {
-  width: 100%;
 }
 
 .card-header {
@@ -776,10 +770,6 @@ onUnmounted(() => {
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .filters-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 768px) {
@@ -803,8 +793,7 @@ onUnmounted(() => {
     align-items: flex-start;
   }
 
-  .stats-grid,
-  .filters-row {
+  .stats-grid {
     grid-template-columns: 1fr;
   }
 }

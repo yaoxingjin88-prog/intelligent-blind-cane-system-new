@@ -4,7 +4,10 @@ import lombok.RequiredArgsConstructor;
 import com.ruoyi.dto.DeviceBindRequest;
 import com.ruoyi.entity.CaneDevice;
 import com.ruoyi.entity.Result;
+import com.ruoyi.service.AnalyticsService;
+import com.ruoyi.service.AppCacheService;
 import com.ruoyi.service.CaneDeviceService;
+import com.ruoyi.service.MonitorOverviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +25,9 @@ import java.util.Set;
 public class CaneDeviceController {
 
     private final CaneDeviceService deviceService;
+    private final AppCacheService appCacheService;
+    private final AnalyticsService analyticsService;
+    private final MonitorOverviewService monitorOverviewService;
 
     /**
      * 设备列表 GET /api/devices
@@ -71,7 +77,7 @@ public class CaneDeviceController {
      * 更新设备 PUT /api/devices
      * 仅更新档案字段；归属请用 bind/unbind
      */
-    @Operation(summary = "更新设备", description = "更新设备编号/名称/电量/状态，不改绑定归属")
+    @Operation(summary = "更新设备", description = "仅更新设备编号/名称；电量与在线状态由上报维护，归属走 bind/unbind")
     @PutMapping
     public Result updateDevice(@RequestBody CaneDevice device) {
         deviceService.updateDevice(device);
@@ -96,6 +102,20 @@ public class CaneDeviceController {
     @PostMapping("/{id}/unbind")
     public Result unbindDevice(@PathVariable Long id) {
         deviceService.unbindDevice(id);
+        return Result.success();
+    }
+
+    /**
+     * 标记设备离线 POST /api/devices/{id}/offline
+     * 假硬件停止上报或设备关机时调用，立即离线（不吃近 3 分钟残留心跳）
+     */
+    @Operation(summary = "标记设备离线", description = "落库离线并停止页内测试模拟；列表不再因残留传感显示在线")
+    @PostMapping("/{id}/offline")
+    public Result markOffline(@PathVariable Long id) {
+        deviceService.markOffline(id);
+        appCacheService.evictDashboardCaches();
+        analyticsService.invalidateLocalCache();
+        monitorOverviewService.invalidateLocalCache();
         return Result.success();
     }
 

@@ -10,7 +10,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * 可选 Redis：仅当 {@code app.redis.enabled=true} 时装配。
- * 默认关闭，避免本地未装 Redis 时启动失败；启用后用于限流与看板共享缓存。
+ * 默认关闭，避免本地未装 Redis 时启动失败；
+ * 启用后：限流、看板/监控缓存、设备运行时态（最新传感 / 告警去重 / 静止计时）。
  */
 @Configuration
 @ConditionalOnProperty(prefix = "app.redis", name = "enabled", havingValue = "true")

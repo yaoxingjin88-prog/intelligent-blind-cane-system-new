@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>假硬件模拟器 · 智能盲杖</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #fff;
+      --line: #e5e7eb;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --danger: #dc2626;
+      --ok: #059669;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 1.35rem; margin: 0 0 6px; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+    .card h2 { font-size: 1rem; margin: 0 0 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--muted); }
+    input, select, button, textarea {
+      font: inherit;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: #fff;
+      color: var(--text);
+    }
+    input[type="number"] { width: 120px; }
+    input[type="text"], input[type="password"] { min-width: 160px; }
+    select { min-width: 220px; }
+    button {
+      cursor: pointer;
+      background: #f9fafb;
+      border-color: #d1d5db;
+    }
+    button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    button.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .status.on { background: #d1fae5; color: var(--ok); }
+    .status.off { background: #fee2e2; color: var(--danger); }
+    .hint { font-size: 0.82rem; color: var(--muted); margin-top: 8px; }
+    .fence-box {
+      font-size: 0.88rem;
+      background: #f9fafb;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      white-space: pre-wrap;
+    }
+    #log {
+      height: 220px;
+      overflow: auto;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.78rem;
+      background: #111827;
+      color: #e5e7eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      white-space: pre-wrap;
+    }
+    .log-ok { color: #6ee7b7; }
+    .log-err { color: #fca5a5; }
+    .log-info { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>假硬件模拟器</h1>
+    <p class="sub">
+      用已建档的 <code>deviceId</code> 向 <code>POST /api/sensor-data</code> 上报，模拟真机心跳。
+      请先在管理端「设备管理」添加设备，再用同一 deviceId 启动上报。
+    </p>
+
+    <div class="card">
+      <h2>1. 连接后端</h2>
+      <div class="row">
+        <label>API 地址
+          <input id="baseUrl" type="text" value="" placeholder="留空=同源 /api（推荐经管理端打开）" style="min-width:260px" />
+        </label>
+        <label>管理员账号
+          <input id="username" type="text" value="admin" />
+        </label>
+        <label>密码
+          <input id="password" type="password" value="123456" />
+        </label>
+        <button class="primary" id="btnLogin" type="button">登录拿 Token</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label style="flex:1">JWT（也可粘贴）
+          <input id="token" type="text" placeholder="Bearer 可省略，只贴 token" style="width:100%; min-width:280px" />
+        </label>
+        <label>X-Device-Key（可选）
+          <input id="deviceKey" type="text" placeholder="未配置 DEVICE_API_KEY 可留空" />
+        </label>
+      </div>
+      <p class="hint">拉设备列表 / 围栏需要管理端 JWT；上报本身不走 JWT，若生产配了设备密钥再填 Key。</p>
+    </div>
+
+    <div class="card">
+      <h2>2. 选择已建档设备</h2>
+      <div class="row">
+        <button id="btnLoadDevices" type="button">刷新设备列表</button>
+        <label>设备
+          <select id="deviceSelect"><option value="">请先登录并刷新</option></select>
+        </label>
+        <span id="runBadge" class="status off">未启动</span>
+      </div>
+      <p class="hint" id="deviceMeta">尚未选择设备</p>
+      <p class="hint">
+        「在线」是后台状态；「停止」只在本机「上报中」时可用。
+        若显示在线但未启动（残留心跳），点「标记离线」。同一时间只上报一台，启动后下拉锁定。
+      </p>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" id="btnStart" type="button" disabled>启动上报</button>
+        <button class="danger" id="btnStop" type="button" disabled>停止上报</button>
+        <button id="btnForceOffline" type="button" disabled>标记离线</button>
+        <label>间隔(秒)
+          <input id="intervalSec" type="number" min="1" max="60" value="3" />
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. 位置与电量</h2>
+      <div class="row">
+        <label>纬度
+          <input id="lat" type="number" step="0.000001" value="36.321143" style="width:140px" />
+        </label>
+        <label>经度
+          <input id="lng" type="number" step="0.000001" value="120.397571" style="width:140px" />
+        </label>
+        <label>电量 %
+          <input id="battery" type="number" min="0" max="100" value="100" />
+        </label>
+        <button id="btnLoadLatest" type="button">读最新点</button>
+        <button id="btnLoadFence" type="button">读围栏</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label>移动距离(米)
+          <input id="stepMeters" type="number" min="1" value="100" />
+        </label>
+        <label>方向
+          <select id="bearing">
+            <option value="0">北</option>
+            <option value="90">东</option>
+            <option value="180">南</option>
+            <option value="270">西</option>
+            <option value="45">东北</option>
+            <option value="135">东南</option>
+          </select>
+        </label>
+        <button id="btnStep" type="button">步进移动</button>
+        <button id="btnOutside" type="button">一键越界并上报</button>
+        <button id="btnInside" type="button">回到围栏中心</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label><span><input id="simFall" type="checkbox" /> 下一条模拟跌倒</span></label>
+        <label>障碍距离 cm
+          <input id="obstacle" type="number" value="80" />
+        </label>
+      </div>
+      <p class="hint">
+        后台仅在「围栏内→围栏外」时报警；若已在外面再移出不会重复报。
+        「一键越界并上报」会先回中心打一点、再移出打一点，强制走出边沿。需先为该设备配置围栏。
+      </p>
+      <div class="fence-box" id="fenceInfo">围栏：未加载</div>
+    </div>
+
+    <div class="card">
+      <h2>4. 上报日志</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id)
+    const state = {
+      token: localStorage.getItem('hw_sim_token') || '',
+      devices: [],
+      fence: null,
+      timer: null,
+      running: false,
+      fallOnce: false,
+      /** 启动后锁定的上报目标，避免下拉切换把数据打到别的设备 */
+      activeReport: null
+    }
+
+    if (state.token) $('token').value = state.token
+
+    function log(msg, cls = 'log-info') {
+      const el = $('log')
+      const t = new Date().toLocaleTimeString()
+      el.innerHTML = `<div class="${cls}">[${t}] ${msg}</div>` + el.innerHTML
+    }
+
+    function base() {
+      // 留空：走当前页同源（管理端 :3000 会经 Vite 代理到后端，无 CORS）
+      return ($('baseUrl').value || '').trim().replace(/\/$/, '')
+    }
+
+    /** 本地时间 yyyy-MM-dd HH:mm:ss（勿用 toISOString，那是 UTC，后台会判不在线） */
+    function formatLocalDateTime(d) {
+      const p = (n) => String(n).padStart(2, '0')
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+    }
+
+    function authHeaders(extra = {}) {
+      const headers = { 'Content-Type': 'application/json', ...extra }
+      let token = $('token').value.trim()
+      if (token.startsWith('Bearer ')) token = token.slice(7).trim()
+      if (token) headers.Authorization = `Bearer ${token}`
+      const key = $('deviceKey').value.trim()
+      if (key) headers['X-Device-Key'] = key
+      return headers
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(base() + path, {
+        ...options,
+        headers: { ...authHeaders(options.headers || {}), ...(options.headers || {}) }
+      })
+      let data = null
+      try { data = await res.json() } catch (_) {}
+      if (!res.ok) throw new Error((data && data.msg) || `HTTP ${res.status}`)
+      if (data && data.code != null && data.code !== 200) {
+        throw new Error(data.msg || `业务错误 ${data.code}`)
+      }
+      return data
+    }
+
+    function selectedDevice() {
+      const id = $('deviceSelect').value
+      if (!id) return null
+      // 只按主键匹配，避免和 deviceId 串台
+      return state.devices.find(d => String(d.id) === String(id)) || null
+    }
+
+    /** 当前实际上报目标：运行中用锁定对象，否则用下拉选中 */
+    function reportingDevice() {
+      if (state.running && state.activeReport) {
+        return state.devices.find(d => String(d.id) === String(state.activeReport.id))
+          || state.activeReport
+      }
+      return selectedDevice()
+    }
+
+    function setRunning(on) {
+      state.running = on
+      $('runBadge').textContent = on ? '上报中' : '未启动'
+      $('runBadge').className = 'status ' + (on ? 'on' : 'off')
+      $('btnStart').disabled = on || !selectedDevice()
+      $('btnStop').disabled = !on
+      $('btnForceOffline').disabled = !selectedDevice()
+      $('deviceSelect').disabled = on
+    }
+
+    async function markDeviceOffline(target, label) {
+      if (!target?.id) throw new Error('无设备')
+      await api(`/api/devices/${target.id}/offline`, { method: 'POST', body: '{}' })
+      const row = state.devices.find(d => String(d.id) === String(target.id))
+      if (row) row.status = '离线'
+      log(`${label || '已标记离线'}：${target.deviceId || target.id}`, 'log-ok')
+      refreshDeviceSelectLabels()
+      updateDeviceMeta()
+    }
+
+    function refreshDeviceSelectLabels() {
+      const sel = $('deviceSelect')
+      const prev = sel.value
+      sel.innerHTML = state.devices.length
+        ? state.devices.map(d => {
+            const mark = state.running && state.activeReport && String(state.activeReport.id) === String(d.id)
+              ? ' · 本机上报中'
+              : ''
+            return `<option value="${d.id}">${d.deviceId} — ${d.deviceName || '未命名'} (${d.status || '-'})${mark}</option>`
+          }).join('')
+        : '<option value="">暂无设备，请先在管理端添加</option>'
+      if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev
+      else if (state.activeReport?.id) sel.value = String(state.activeReport.id)
+    }
+
+    function patchDeviceOnline(deviceId, batteryLevel) {
+      const row = state.devices.find(d => d.deviceId === deviceId)
+      if (!row) return
+      row.status = '在线'
+      if (batteryLevel != null && !Number.isNaN(Number(batteryLevel))) {
+        row.batteryLevel = Number(batteryLevel)
+      }
+      refreshDeviceSelectLabels()
+      updateDeviceMeta()
+    }
+
+    function updateDeviceMeta() {
+      const d = reportingDevice() || selectedDevice()
+      if (!d) {
+        $('deviceMeta').textContent = '尚未选择设备'
+        $('btnStart').disabled = true
+        return
+      }
+      const localHint = state.running && state.activeReport && String(state.activeReport.id) === String(d.id)
+        ? ' · 本机正在上报'
+        : ''
+      $('deviceMeta').textContent =
+        `编号 ${d.deviceId} · ${d.deviceName || '-'} · 用户 ${d.userName || '未绑定'} · 电量 ${d.batteryLevel ?? '-'}% · 状态 ${d.status || '-'}${localHint}`
+      if (!state.running) $('btnStart').disabled = false
+      $('btnForceOffline').disabled = !d
+      if (!state.running && d.batteryLevel != null) $('battery').value = d.batteryLevel
+    }
+
+    /** 按方位角与米数移动（近似球面） */
+    function moveByMeters(lat, lng, meters, bearingDeg) {
+      const R = 6378137
+      const br = bearingDeg * Math.PI / 180
+      const lat1 = lat * Math.PI / 180
+      const lng1 = lng * Math.PI / 180
+      const dr = meters / R
+      const lat2 = Math.asin(Math.sin(lat1) * Math.cos(dr) + Math.cos(lat1) * Math.sin(dr) * Math.cos(br))
+      const lng2 = lng1 + Math.atan2(
+        Math.sin(br) * Math.sin(dr) * Math.cos(lat1),
+        Math.cos(dr) - Math.sin(lat1) * Math.sin(lat2)
+      )
+      return { lat: lat2 * 180 / Math.PI, lng: ((lng2 * 180 / Math.PI + 540) % 360) - 180 }
+    }
+
+    function distanceMeters(lat1, lng1, lat2, lng2) {
+      const R = 6378137
+      const toRad = (d) => d * Math.PI / 180
+      const dLat = toRad(lat2 - lat1)
+      const dLng = toRad(lng2 - lng1)
+      const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+      return 2 * R * Math.asin(Math.sqrt(a))
+    }
+
+    function renderFence() {
+      const f = state.fence
+      if (!f) {
+        $('fenceInfo').textContent = '围栏：未加载（该设备可能尚未配置）'
+        return
+      }
+      const lat = Number($('lat').value)
+      const lng = Number($('lng').value)
+      const dist = (f.centerLatitude != null && f.centerLongitude != null)
+        ? distanceMeters(lat, lng, Number(f.centerLatitude), Number(f.centerLongitude))
+        : null
+      const outside = dist != null && f.radiusMeters != null && dist > Number(f.radiusMeters)
+      $('fenceInfo').textContent =
+        `围栏「${f.fenceName || '-'}」\n` +
+        `中心 ${f.centerLatitude}, ${f.centerLongitude}\n` +
+        `半径 ${f.radiusMeters} m · 启用 ${f.enabled ? '是' : '否'}\n` +
+        (dist != null
+          ? `当前距中心约 ${dist.toFixed(1)} m → ${outside ? '围栏外（下一次上报可能触发越界）' : '围栏内'}`
+          : '')
+    }
+
+    $('btnLogin').onclick = async () => {
+      try {
+        const data = await api('/api/login', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: $('username').value.trim(),
+            password: $('password').value
+          })
+        })
+        const token = data.data?.token || ''
+        $('token').value = token
+        state.token = token
+        localStorage.setItem('hw_sim_token', token)
+        log('登录成功', 'log-ok')
+        await loadDevices()
+      } catch (e) {
+        log('登录失败: ' + e.message, 'log-err')
+      }
+    }
+
+    async function loadDevices() {
+      try {
+        const data = await api('/api/devices')
+        state.devices = data.data || []
+        refreshDeviceSelectLabels()
+        updateDeviceMeta()
+        log(`已加载 ${state.devices.length} 台设备`, 'log-ok')
+      } catch (e) {
+        log('拉设备失败: ' + e.message + '（需先登录或粘贴有效 Token）', 'log-err')
+      }
+    }
+
+    $('btnLoadDevices').onclick = loadDevices
+    $('deviceSelect').onchange = async () => {
+      if (state.running) {
+        // 运行中下拉已禁用；若被脚本改值则强制回锁定设备
+        if (state.activeReport?.id) {
+          $('deviceSelect').value = String(state.activeReport.id)
+        }
+        log('上报中不可切换设备，请先停止', 'log-err')
+        return
+      }
+      updateDeviceMeta()
+      state.fence = null
+      renderFence()
+      await loadLatest()
+      await loadFence()
+    }
+
+    async function loadLatest() {
+      const d = selectedDevice()
+      if (!d) return
+      try {
+        const data = await api(`/api/sensor-data/latest?deviceId=${encodeURIComponent(d.deviceId)}`)
+        const s = data.data
+        if (s && s.latitude != null && s.longitude != null) {
+          $('lat').value = s.latitude
+          $('lng').value = s.longitude
+          log(`已填入最新点 (${s.latitude}, ${s.longitude})`, 'log-ok')
+        } else {
+          log('暂无历史点，沿用当前坐标', 'log-info')
+        }
+        renderFence()
+      } catch (e) {
+        log('读最新点失败: ' + e.message, 'log-err')
+      }
+    }
+
+    async function loadFence() {
+      const d = selectedDevice()
+      if (!d) return
+      try {
+        const data = await api(`/api/fences?deviceId=${encodeURIComponent(d.deviceId)}`)
+        const list = data.data || []
+        state.fence = list.find(f => f.enabled) || list[0] || null
+        renderFence()
+        log(state.fence ? `围栏已加载：半径 ${state.fence.radiusMeters}m` : '该设备无围栏', 'log-ok')
+      } catch (e) {
+        log('读围栏失败: ' + e.message, 'log-err')
+      }
+    }
+
+    $('btnLoadLatest').onclick = loadLatest
+    $('btnLoadFence').onclick = loadFence
+
+    $('btnStep').onclick = () => {
+      const meters = Number($('stepMeters').value) || 0
+      const bearing = Number($('bearing').value)
+      const next = moveByMeters(Number($('lat').value), Number($('lng').value), meters, bearing)
+      $('lat').value = next.lat.toFixed(6)
+      $('lng').value = next.lng.toFixed(6)
+      renderFence()
+      log(`步进 ${meters}m 方位 ${bearing}° → (${$('lat').value}, ${$('lng').value})`)
+    }
+
+    $('btnOutside').onclick = async () => {
+      const d = reportingDevice() || selectedDevice()
+      if (!d?.deviceId) {
+        log('请先选择设备', 'log-err')
+        return
+      }
+      if (!state.fence || state.fence.centerLatitude == null) {
+        await loadFence()
+      }
+      const f = state.fence
+      if (!f || f.centerLatitude == null || f.radiusMeters == null) {
+        log('该设备无可用围栏，请先在实时监控里配置并启用', 'log-err')
+        return
+      }
+      if (!f.enabled && f.enabled !== true && f.enabled !== 1) {
+        // enabled 可能为 true/1；显式 false 才拦截
+        if (f.enabled === false || f.enabled === 0 || f.enabled === '0') {
+          log('围栏未启用，请先在管理端启用', 'log-err')
+          return
+        }
+      }
+
+      const extra = Number($('stepMeters').value) || 50
+      const meters = Number(f.radiusMeters) + Math.max(extra, 20)
+      const bearing = Number($('bearing').value)
+      const centerLat = Number(f.centerLatitude)
+      const centerLng = Number(f.centerLongitude)
+
+      try {
+        // 1) 先在中心上报 → 后台 lastStatus=INSIDE
+        $('lat').value = centerLat.toFixed(6)
+        $('lng').value = centerLng.toFixed(6)
+        renderFence()
+        log(`越界演示① 先在中心上报 ${d.deviceId}…`, 'log-info')
+        await pushOnce()
+
+        // 2) 再移出并上报 → INSIDE→OUTSIDE 边沿触发报警
+        const next = moveByMeters(centerLat, centerLng, meters, bearing)
+        $('lat').value = next.lat.toFixed(6)
+        $('lng').value = next.lng.toFixed(6)
+        renderFence()
+        log(`越界演示② 移出约 ${meters}m 并上报…`, 'log-info')
+        await pushOnce()
+        log('已完成内→外边沿上报，请看右上角报警铃 / 告警记录（若仍无新条，确认围栏已启用）', 'log-ok')
+      } catch (e) {
+        log('越界演示失败: ' + e.message, 'log-err')
+      }
+    }
+
+    $('btnInside').onclick = () => {
+      const f = state.fence
+      if (!f || f.centerLatitude == null) {
+        log('请先加载围栏', 'log-err')
+        return
+      }
+      $('lat').value = Number(f.centerLatitude).toFixed(6)
+      $('lng').value = Number(f.centerLongitude).toFixed(6)
+      renderFence()
+      log('已回到围栏中心（下次上报会记为围栏内）', 'log-ok')
+    }
+
+    async function pushOnce() {
+      const d = reportingDevice()
+      if (!d?.deviceId) throw new Error('未选择设备')
+      const fall = $('simFall').checked || state.fallOnce
+      state.fallOnce = false
+      if ($('simFall').checked) $('simFall').checked = false
+
+      const body = {
+        deviceId: d.deviceId,
+        latitude: Number($('lat').value),
+        longitude: Number($('lng').value),
+        batteryLevel: Number($('battery').value),
+        obstacleDistance: Number($('obstacle').value),
+        accelX: fall ? 2.8 : 0.9,
+        accelY: fall ? 2.5 : 0.9,
+        accelZ: fall ? 0.2 : 1.0,
+        isFall: !!fall,
+        temperature: 25,
+        humidity: 50,
+        dataTime: formatLocalDateTime(new Date())
+      }
+
+      const headers = { 'Content-Type': 'application/json' }
+      const key = $('deviceKey').value.trim()
+      if (key) headers['X-Device-Key'] = key
+
+      const res = await fetch(base() + '/api/sensor-data', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      })
+      let data = null
+      try { data = await res.json() } catch (_) {}
+      if (!res.ok || (data && data.code != null && data.code !== 200)) {
+        throw new Error((data && data.msg) || `HTTP ${res.status}`)
+      }
+      // 上报成功即视为后台在线（不必等再点刷新）
+      patchDeviceOnline(d.deviceId, body.batteryLevel)
+      log(
+        `上报 ${d.deviceId} (${body.latitude}, ${body.longitude}) 电量${body.batteryLevel}%${fall ? ' [跌倒]' : ''}`,
+        'log-ok'
+      )
+      renderFence()
+    }
+
+    $('btnStart').onclick = async () => {
+      const d = selectedDevice()
+      if (!d) return
+      if (!d.deviceId) {
+        log('设备编号无效', 'log-err')
+        return
+      }
+      state.activeReport = { id: d.id, deviceId: d.deviceId, deviceName: d.deviceName }
+      try {
+        await pushOnce()
+      } catch (e) {
+        state.activeReport = null
+        log('首次上报失败: ' + e.message, 'log-err')
+        return
+      }
+      const sec = Math.max(1, Number($('intervalSec').value) || 3)
+      if (state.timer) clearInterval(state.timer)
+      state.timer = setInterval(async () => {
+        try { await pushOnce() } catch (e) { log('上报失败: ' + e.message, 'log-err') }
+      }, sec * 1000)
+      setRunning(true)
+      refreshDeviceSelectLabels()
+      updateDeviceMeta()
+      log(`已锁定 ${d.deviceId}，每 ${sec}s 上报（切换设备请先停止）`, 'log-ok')
+    }
+
+    $('btnStop').onclick = async () => {
+      if (state.timer) clearInterval(state.timer)
+      state.timer = null
+      const target = state.activeReport
+      setRunning(false)
+      state.activeReport = null
+      $('deviceSelect').disabled = false
+      if (!target?.id) {
+        log('已停止上报（无锁定设备）', 'log-info')
+        refreshDeviceSelectLabels()
+        updateDeviceMeta()
+        return
+      }
+      try {
+        await markDeviceOffline(target, '已停止上报并离线')
+      } catch (e) {
+        log('已停上报，但标记离线失败: ' + e.message + '（约 3 分钟后也会判离线）', 'log-err')
+        refreshDeviceSelectLabels()
+        updateDeviceMeta()
+      }
+    }
+
+    /** 本机未在跑、但后台仍显示在线时用（残留心跳 / 上次未停干净） */
+    $('btnForceOffline').onclick = async () => {
+      if (state.running) {
+        log('请先点「停止上报」，或直接用停止', 'log-err')
+        return
+      }
+      const d = selectedDevice()
+      if (!d?.id) {
+        log('请先选择设备', 'log-err')
+        return
+      }
+      try {
+        await markDeviceOffline(d, '已标记离线')
+      } catch (e) {
+        log('标记离线失败: ' + e.message, 'log-err')
+      }
+    }
+
+    $('lat').addEventListener('change', renderFence)
+    $('lng').addEventListener('change', renderFence)
+
+    setRunning(false)
+    // file:// 打开时 origin 为 null，必被 CORS 拦；请用下方地址
+    if (location.protocol === 'file:') {
+      $('baseUrl').value = 'http://localhost:8081'
+      log('请勿用本地文件直接打开。请先启动管理端前端，访问：http://localhost:3000/hardware-simulator.html', 'log-err')
+    } else if (!location.port || location.port === '3000') {
+      $('baseUrl').value = ''
+      log('当前经管理端同源打开，API 走 /api 代理（无 CORS）', 'log-ok')
+    } else {
+      if (!$('baseUrl').value) $('baseUrl').value = 'http://localhost:8081'
+      log('请确认 API 地址指向后端（默认 http://localhost:8081）')
+    }
+    if (state.token) loadDevices().catch(() => {})
+  </script>
+</body>
+</html>

@@ -26,9 +26,13 @@ class AppCacheServiceTest {
      */
     @SuppressWarnings("unchecked")
     private AppCacheService newLocalCache() {
-        ObjectProvider<StringRedisTemplate> provider = mock(ObjectProvider.class);
-        when(provider.getIfAvailable()).thenReturn(null);
-        return new AppCacheService(provider);
+        ObjectProvider<StringRedisTemplate> redis = mock(ObjectProvider.class);
+        ObjectProvider<AnalyticsService> analytics = mock(ObjectProvider.class);
+        ObjectProvider<MonitorOverviewService> monitor = mock(ObjectProvider.class);
+        when(redis.getIfAvailable()).thenReturn(null);
+        when(analytics.getIfAvailable()).thenReturn(null);
+        when(monitor.getIfAvailable()).thenReturn(null);
+        return new AppCacheService(redis, analytics, monitor);
     }
 
     /** 写入后可读回同一 key 的 Map 字段 */

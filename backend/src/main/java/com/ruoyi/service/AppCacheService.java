@@ -24,11 +24,18 @@ public class AppCacheService {
     public static final String KEY_MONITOR_OVERVIEW = "cache:monitor:overview";
 
     private final ObjectProvider<StringRedisTemplate> redisProvider;
+    private final ObjectProvider<AnalyticsService> analyticsProvider;
+    private final ObjectProvider<MonitorOverviewService> monitorOverviewProvider;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, LocalEntry> local = new ConcurrentHashMap<>();
 
-    public AppCacheService(ObjectProvider<StringRedisTemplate> redisProvider) {
+    public AppCacheService(
+            ObjectProvider<StringRedisTemplate> redisProvider,
+            ObjectProvider<AnalyticsService> analyticsProvider,
+            ObjectProvider<MonitorOverviewService> monitorOverviewProvider) {
         this.redisProvider = redisProvider;
+        this.analyticsProvider = analyticsProvider;
+        this.monitorOverviewProvider = monitorOverviewProvider;
     }
 
     /** 是否已启用 Redis Bean（不等于一定能连上） */
@@ -91,10 +98,18 @@ public class AppCacheService {
         }
     }
 
-    /** 传感/报警变更后失效看板相关缓存 */
+    /** 传感/报警变更后失效看板相关缓存（含各 Service 本机 L1） */
     public void evictDashboardCaches() {
         evict(KEY_DASHBOARD);
         evict(KEY_MONITOR_OVERVIEW);
+        AnalyticsService analytics = analyticsProvider.getIfAvailable();
+        if (analytics != null) {
+            analytics.invalidateLocalCache();
+        }
+        MonitorOverviewService monitor = monitorOverviewProvider.getIfAvailable();
+        if (monitor != null) {
+            monitor.invalidateLocalCache();
+        }
     }
 
     private record LocalEntry(Map<String, Object> data, long expiresAt) {

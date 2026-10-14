@@ -1,7 +1,6 @@
 package com.ruoyi.controller.mini;
 
 import lombok.RequiredArgsConstructor;
-import com.ruoyi.common.AlarmStatus;
 import com.ruoyi.entity.AlarmRecord;
 import com.ruoyi.entity.CrossingAssistSnapshot;
 import com.ruoyi.entity.Guardian;
@@ -110,16 +109,11 @@ public class MiniCareController {
                 ? "当前位置待确认"
                 : locationText.trim();
 
-        AlarmRecord alarmRecord = new AlarmRecord();
-        alarmRecord.setDeviceId(deviceId);
-        alarmRecord.setAlarmType("SOS求助");
-        alarmRecord.setAlarmTime(LocalDateTime.now().format(MiniCareOverviewService.DATE_TIME_FORMATTER));
-        alarmRecord.setStatus(AlarmStatus.PENDING);
-        // 调用业务层入库并推送实时通知
-        support.alarmRecordService().addAlarmRecord(alarmRecord);
-
-        support.alarmWebSocketHandler().sendGuardianAlert(deviceId, "SOS", "danger", normalizedContent, normalizedLocation);
-        support.alarmWebSocketHandler().sendAlarmNotification(deviceId, alarmRecord);
+        // 与摔倒/越界统一：落库 + 管理端广播 + 家属守护提醒
+        AlarmRecord alarmRecord = support.alarmNotifyService().createAlarmPersistAndPush(deviceId, "SOS求助");
+        // 补充位置描述推送（create 文案偏通用，SOS 需要更明确）
+        support.alarmWebSocketHandler().sendGuardianAlert(
+                deviceId, "SOS", "danger", normalizedContent, normalizedLocation);
 
         Map<String, Object> result = new HashMap<>();
         result.put("deviceId", deviceId);
@@ -127,6 +121,7 @@ public class MiniCareController {
         result.put("message", normalizedContent);
         result.put("locationText", normalizedLocation);
         result.put("sentAt", alarmRecord.getAlarmTime());
+        result.put("alarmId", alarmRecord.getId());
         return Result.success(result);
     }
 

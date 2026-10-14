@@ -57,6 +57,11 @@ public class DatabaseInitConfig {
             // 步骤5：监护人角色（主监护人 / 子监护人）
             addColumnIfMissing(jdbcTemplate, "guardian", "role",
                     "ALTER TABLE guardian ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'PRIMARY' COMMENT 'PRIMARY主监护人 MEMBER子监护人' AFTER relation");
+            // 报警处理人：监护人主责，管理端兜底
+            addColumnIfMissing(jdbcTemplate, "alarm_record", "handled_by",
+                    "ALTER TABLE alarm_record ADD COLUMN handled_by VARCHAR(20) NULL COMMENT 'admin|guardian' AFTER status");
+            addColumnIfMissing(jdbcTemplate, "alarm_record", "handled_at",
+                    "ALTER TABLE alarm_record ADD COLUMN handled_at VARCHAR(32) NULL COMMENT '处理时间' AFTER handled_by");
             // 同一持杖用户：id 最小者为主监护人，其余为子监护人（幂等）
             jdbcTemplate.update(
                     "UPDATE guardian g " +

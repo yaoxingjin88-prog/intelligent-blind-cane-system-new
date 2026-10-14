@@ -17,4 +17,8 @@ public class AlarmRecord {
     private String alarmTime;
     /** 处理状态：0/未处理=待处理，1/已处理=已处理（见 AlarmStatus） */
     private String status;
+    /** 处理方：admin=管理端兜底，guardian=监护人（主责） */
+    private String handledBy;
+    /** 处理时间 yyyy-MM-dd HH:mm:ss */
+    private String handledAt;
 }

@@ -6,6 +6,7 @@ import com.ruoyi.config.SecurityProperties;
 import com.ruoyi.entity.CaneDevice;
 import com.ruoyi.entity.Guardian;
 import com.ruoyi.entity.SensorData;
+import com.ruoyi.service.AlarmNotifyService;
 import com.ruoyi.service.AlarmRecordService;
 import com.ruoyi.service.CaneDeviceService;
 import com.ruoyi.service.CrossingAssistService;
@@ -41,6 +42,7 @@ public class MiniSupport {
     private final GuardianService guardianService;
     private final CaneDeviceService caneDeviceService;
     private final AlarmRecordService alarmRecordService;
+    private final AlarmNotifyService alarmNotifyService;
     private final FeedbackService feedbackService;
     private final ElectronicFenceService electronicFenceService;
     private final SensorDataService sensorDataService;
@@ -61,6 +63,10 @@ public class MiniSupport {
 
     public AlarmRecordService alarmRecordService() {
         return alarmRecordService;
+    }
+
+    public AlarmNotifyService alarmNotifyService() {
+        return alarmNotifyService;
     }
 
     public FeedbackService feedbackService() {

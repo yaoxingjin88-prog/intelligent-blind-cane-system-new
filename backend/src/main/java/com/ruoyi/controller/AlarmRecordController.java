@@ -27,14 +27,25 @@ public class AlarmRecordController {
      * @param limit         条数上限，默认 200
      * @param all           保留参数（不再全表扫描）
      * @param unhandledOnly true 时仅返回未处理告警
+     * @param deviceId      可选，按设备过滤
      * @return 统一返回结果
      */
-    @Operation(summary = "获取告警记录", description = "默认返回最近若干条；unhandledOnly=true 时仅返回未处理告警（均有上限）")
+    @Operation(summary = "获取告警记录", description = "默认返回最近若干条；可按 deviceId 过滤；unhandledOnly=true 时仅未处理")
     @GetMapping
     public Result<List<AlarmRecord>> getAllAlarmRecords(
             @RequestParam(required = false, defaultValue = "200") Integer limit,
             @RequestParam(required = false, defaultValue = "false") Boolean all,
-            @RequestParam(required = false, defaultValue = "false") Boolean unhandledOnly) {
+            @RequestParam(required = false, defaultValue = "false") Boolean unhandledOnly,
+            @RequestParam(required = false) String deviceId) {
+        if (deviceId != null && !deviceId.isBlank()) {
+            List<AlarmRecord> byDevice = alarmRecordService.getAlarmsByDeviceId(deviceId, limit);
+            if (Boolean.TRUE.equals(unhandledOnly)) {
+                byDevice = byDevice.stream()
+                        .filter(a -> com.ruoyi.common.AlarmStatus.isPending(a.getStatus()))
+                        .toList();
+            }
+            return Result.success(byDevice);
+        }
         // all=true 不再全表扫描，统一走限量查询
         if (Boolean.TRUE.equals(unhandledOnly)) {
             return Result.success(alarmRecordService.getUnhandledAlarmRecords(limit));
@@ -103,20 +114,19 @@ public class AlarmRecordController {
      * @param status 目标状态
      * @return 统一返回结果
      */
-    @Operation(summary = "更新告警状态", description = "根据告警记录ID更新告警状态")
+    @Operation(summary = "更新告警状态", description = "根据告警记录ID更新告警状态；标已处理视为管理端兜底结案并通知家属")
     @PutMapping("/status/{id}")
     public Result updateAlarmStatus(@PathVariable Long id, @RequestParam String status) {
-        // 调用业务层更新状态
         alarmRecordService.updateAlarmStatus(id, status);
         return Result.success();
     }
 
     /**
-     * 设备最新未处理告警 GET /api/alarm-records/latest
+     * 设备最新一条告警 GET /api/alarm-records/latest（含已处理，供实时监控展示上下文）
      *
      * @param deviceId 设备编号
      */
-    @Operation(summary = "获取设备最新报警", description = "根据设备ID获取最新的未处理报警")
+    @Operation(summary = "获取设备最新报警", description = "按设备取最近一条报警记录（不限处理状态）")
     @GetMapping("/latest")
     public Result<AlarmRecord> getLatestAlarm(@RequestParam String deviceId) {
         return Result.success(alarmRecordService.getLatestAlarm(deviceId));
@@ -125,11 +135,9 @@ public class AlarmRecordController {
     /**
      * 处理告警（标记已处理） PUT /api/alarm-records/{id}/handle
      */
-    @Operation(summary = "处理报警", description = "处理报警记录，将状态改为已处理")
+    @Operation(summary = "处理报警", description = "管理端兜底结案：标已处理并通知家属端")
     @PutMapping("/{id}/handle")
     public Result handleAlarm(@PathVariable Long id) {
-        // 调用业务层标记已处理
-        alarmRecordService.handleAlarm(id);
-        return Result.success();
+        return Result.success(alarmRecordService.handleAlarm(id, com.ruoyi.service.AlarmNotifyService.HANDLED_BY_ADMIN));
     }
 }

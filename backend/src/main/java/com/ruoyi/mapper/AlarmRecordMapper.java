@@ -10,6 +10,9 @@ import java.util.Map;
  * 报警记录 Mapper，注解 SQL 访问 alarm_record
  */
 public interface AlarmRecordMapper {
+    String ALARM_COLUMNS = "id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, "
+            + "status, handled_by as handledBy, handled_at as handledAt";
+
     /** 统计报警总数 */
     @Select("SELECT COUNT(*) FROM alarm_record")
     int countAll();
@@ -34,20 +37,21 @@ public interface AlarmRecordMapper {
     List<Map<String, Object>> getAlarmTypeDistribution();
 
     /** 按时间倒序查询报警列表 */
-    @Select("SELECT id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, status FROM alarm_record ORDER BY alarm_time DESC, id DESC LIMIT #{limit}")
+    @Select("SELECT " + ALARM_COLUMNS + " FROM alarm_record ORDER BY alarm_time DESC, id DESC LIMIT #{limit}")
     List<AlarmRecord> getAllAlarmRecords(@Param("limit") Integer limit);
 
     /** 按时间倒序查询未处理报警 */
-    @Select("SELECT id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, status FROM alarm_record WHERE status = '0' OR status = '未处理' ORDER BY alarm_time DESC, id DESC LIMIT #{limit}")
+    @Select("SELECT " + ALARM_COLUMNS + " FROM alarm_record WHERE status = '0' OR status = '未处理' ORDER BY alarm_time DESC, id DESC LIMIT #{limit}")
     List<AlarmRecord> getUnhandledAlarmRecords(@Param("limit") Integer limit);
 
     /** 查询最近报警记录 */
-    @Select("SELECT id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, status FROM alarm_record ORDER BY alarm_time DESC, id DESC LIMIT #{limit}")
+    @Select("SELECT " + ALARM_COLUMNS + " FROM alarm_record ORDER BY alarm_time DESC, id DESC LIMIT #{limit}")
     List<AlarmRecord> getRecentAlarmRecords(@Param("limit") Integer limit);
 
     /** 每设备取最新一条报警 */
     @Select("""
-            SELECT a.id, a.device_id as deviceId, a.alarm_type as alarmType, a.alarm_time as alarmTime, a.status
+            SELECT a.id, a.device_id as deviceId, a.alarm_type as alarmType, a.alarm_time as alarmTime, a.status,
+                   a.handled_by as handledBy, a.handled_at as handledAt
             FROM alarm_record a
             INNER JOIN (
                 SELECT device_id, MAX(id) AS max_id
@@ -58,7 +62,7 @@ public interface AlarmRecordMapper {
     List<AlarmRecord> getLatestForAllDevices();
 
     /** 按主键查询 */
-    @Select("SELECT id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, status FROM alarm_record WHERE id = #{id}")
+    @Select("SELECT " + ALARM_COLUMNS + " FROM alarm_record WHERE id = #{id}")
     AlarmRecord getAlarmRecordById(Long id);
 
     /** 插入报警记录 */
@@ -78,13 +82,24 @@ public interface AlarmRecordMapper {
     @Delete("DELETE FROM alarm_record WHERE id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY alarm_time DESC, id DESC) AS rn FROM alarm_record) ranked WHERE ranked.rn > #{keepPerDevice})")
     int pruneOlderThanKeepPerDevice(@Param("keepPerDevice") Integer keepPerDevice);
 
-    /** 更新报警处理状态 */
+    /** 更新报警处理状态（兼容旧调用） */
     @Update("UPDATE alarm_record SET status = #{status} WHERE id = #{id}")
     void updateStatus(@Param("id") Long id, @Param("status") String status);
 
+    /** 标记已处理并记录处理方 */
+    @Update("UPDATE alarm_record SET status = #{status}, handled_by = #{handledBy}, handled_at = #{handledAt} WHERE id = #{id}")
+    void updateHandled(@Param("id") Long id,
+                       @Param("status") String status,
+                       @Param("handledBy") String handledBy,
+                       @Param("handledAt") String handledAt);
+
     /** 查询指定设备最新一条报警 */
-    @Select("SELECT id, device_id as deviceId, alarm_type as alarmType, alarm_time as alarmTime, status FROM alarm_record WHERE device_id = #{deviceId} ORDER BY alarm_time DESC LIMIT 1")
+    @Select("SELECT " + ALARM_COLUMNS + " FROM alarm_record WHERE device_id = #{deviceId} ORDER BY alarm_time DESC LIMIT 1")
     AlarmRecord getLatestByDeviceId(String deviceId);
+
+    /** 按设备查询报警历史（时间倒序） */
+    @Select("SELECT " + ALARM_COLUMNS + " FROM alarm_record WHERE device_id = #{deviceId} ORDER BY alarm_time DESC, id DESC LIMIT #{limit}")
+    List<AlarmRecord> getByDeviceId(@Param("deviceId") String deviceId, @Param("limit") Integer limit);
 
     /**
      * 小程序报警统计。deviceId 为空时统计全部。
@@ -99,10 +114,10 @@ public interface AlarmRecordMapper {
               COALESCE(SUM(CASE WHEN status <> '0' AND status <> '未处理' THEN 1 ELSE 0 END), 0) AS handled,
               COALESCE(SUM(CASE WHEN alarm_time >= DATE_FORMAT(CURDATE(), '%Y-%m-%d') THEN 1 ELSE 0 END), 0) AS today,
               COALESCE(SUM(CASE WHEN alarm_time >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), '%Y-%m-%d') THEN 1 ELSE 0 END), 0) AS thisWeek,
-              COALESCE(SUM(CASE WHEN alarm_type LIKE '%摔%' OR alarm_type LIKE '%跌%' OR LOWER(alarm_type) LIKE '%fall%' THEN 1 ELSE 0 END), 0) AS fall,
+              COALESCE(SUM(CASE WHEN alarm_type LIKE '%摔%' OR alarm_type LIKE '%跌倒%' THEN 1 ELSE 0 END), 0) AS fall,
               COALESCE(SUM(CASE WHEN alarm_type LIKE '%围栏%' OR alarm_type LIKE '%越界%' THEN 1 ELSE 0 END), 0) AS outOfBounds,
-              COALESCE(SUM(CASE WHEN alarm_type LIKE '%电%' OR LOWER(alarm_type) LIKE '%battery%' THEN 1 ELSE 0 END), 0) AS lowBattery,
-              COALESCE(SUM(CASE WHEN LOWER(alarm_type) LIKE '%sos%' THEN 1 ELSE 0 END), 0) AS sos
+              COALESCE(SUM(CASE WHEN alarm_type LIKE '%电%' OR alarm_type LIKE '%电池%' THEN 1 ELSE 0 END), 0) AS lowBattery,
+              COALESCE(SUM(CASE WHEN alarm_type LIKE '%SOS%' OR alarm_type LIKE '%求助%' THEN 1 ELSE 0 END), 0) AS sos
             FROM alarm_record
             WHERE (#{deviceId} IS NULL OR #{deviceId} = '' OR device_id = #{deviceId})
             """)
