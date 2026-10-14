@@ -165,6 +165,7 @@ import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import axios from '../utils/request'
 import { ensureAmap } from '../utils/amap'
+import { startVisibilityInterval } from '../utils/visibilityInterval'
 
 defineOptions({ name: 'MonitoringCenter' })
 
@@ -403,7 +404,7 @@ const refreshOverview = async () => {
 onMounted(async () => {
   await initMap()
   await refreshOverview()
-  overviewTimer = window.setInterval(refreshOverview, 30000)
+  overviewTimer = startVisibilityInterval(refreshOverview, 30000)
 })
 
 onActivated(async () => {
@@ -412,13 +413,13 @@ onActivated(async () => {
   }
   await refreshOverview()
   if (!overviewTimer) {
-    overviewTimer = window.setInterval(refreshOverview, 30000)
+    overviewTimer = startVisibilityInterval(refreshOverview, 30000)
   }
 })
 
 onDeactivated(() => {
   if (overviewTimer) {
-    window.clearInterval(overviewTimer)
+    overviewTimer()
     overviewTimer = null
   }
 })
@@ -442,7 +443,7 @@ onUnmounted(() => {
     overviewAbortController = null
   }
   if (overviewTimer) {
-    window.clearInterval(overviewTimer)
+    overviewTimer()
     overviewTimer = null
   }
   clearMarkers()

@@ -14,6 +14,7 @@ import com.ruoyi.service.VisuallyImpairedUserService;
 import com.ruoyi.utils.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -27,6 +28,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * AI 对话与语音接口控制器
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/ai")
@@ -43,6 +47,7 @@ public class AiChatController {
     private final SensorDataService sensorDataService;
     private final JwtUtil jwtUtil;
 
+    /** 从 Authorization 头提取纯 token */
     private String extractToken(String token) {
         if (token == null) {
             return null;
@@ -50,6 +55,7 @@ public class AiChatController {
         return token.replace("Bearer", "").trim();
     }
 
+    /** 按 JWT 组装监护人/用户/设备/位置上下文 */
     private AiChatService.AiContext buildAiContext(String authorization) {
         try {
             String token = extractToken(authorization);
@@ -86,8 +92,11 @@ public class AiChatController {
     }
 
     /**
-     * 一次性对话（非流式）
-     * 适合小程序端简单场景
+     * 一次性对话（非流式） POST /api/ai/chat
+     *
+     * @param req           消息列表
+     * @param authorization 可选 JWT，用于注入监护人上下文
+     * @return 业务 Map（code / data）
      */
     @Operation(summary = "AI 对话（非流式）")
     @PostMapping("/chat")
@@ -95,6 +104,7 @@ public class AiChatController {
                                     @RequestHeader(value = "Authorization", required = false) String authorization) {
         Map<String, Object> resp = new HashMap<>();
         try {
+            // 调用业务层完成对话
             String answer = aiChatService.chat(req.getMessages(), buildAiContext(authorization));
             resp.put("code", 200);
             resp.put("data", Map.of("content", answer));
@@ -107,21 +117,29 @@ public class AiChatController {
     }
 
     /**
-     * 流式对话（SSE）
-     * 前端通过 EventSource 接收 delta 事件，打字机效果
+     * 流式对话（SSE） POST /api/ai/chat/stream
+     *
+     * @param req           消息列表
+     * @param authorization 可选 JWT
+     * @return SSE 发射器
      */
     @Operation(summary = "AI 对话（流式 SSE）")
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@RequestBody ChatRequest req,
                                  @RequestHeader(value = "Authorization", required = false) String authorization) {
         SseEmitter emitter = new SseEmitter(60_000L);
+        // 调用业务层推送流式结果
         aiChatService.chatStream(req.getMessages(), buildAiContext(authorization), emitter);
         return emitter;
     }
 
     /**
-     * 语音识别（STT）
-     * 小程序上传录音文件（mp3/pcm/wav），返回识别到的文字
+     * 语音识别 STT POST /api/ai/stt
+     *
+     * @param file   录音文件
+     * @param format 音频格式，默认 mp3
+     * @param rate   采样率，默认 16000
+     * @return 业务 Map（识别文本）
      */
     @Operation(summary = "语音识别 STT")
     @PostMapping(value = "/stt", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -132,6 +150,7 @@ public class AiChatController {
         Map<String, Object> resp = new HashMap<>();
         try {
             byte[] audioBytes = file.getBytes();
+            // 调用业务层做语音识别
             String text = baiduSpeechService.recognize(audioBytes, format, rate);
             resp.put("code", 200);
             resp.put("data", Map.of("text", text));
@@ -144,13 +163,16 @@ public class AiChatController {
     }
 
     /**
-     * 语音合成（TTS）
-     * 传入文字，返回 MP3 二进制流，小程序直接播放
+     * 语音合成 TTS POST /api/ai/tts
+     *
+     * @param req 待合成文本
+     * @return MP3 二进制响应
      */
     @Operation(summary = "语音合成 TTS")
     @PostMapping(value = "/tts", produces = "audio/mpeg")
     public ResponseEntity<byte[]> tts(@RequestBody TtsRequest req) {
         try {
+            // 调用业务层合成语音
             byte[] mp3 = baiduSpeechService.synthesize(req.getText());
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.parseMediaType("audio/mpeg"));
@@ -162,27 +184,15 @@ public class AiChatController {
         }
     }
 
+    /** 文字对话入参 */
+    @Data
     public static class ChatRequest {
         private List<Map<String, String>> messages;
-
-        public List<Map<String, String>> getMessages() {
-            return messages;
-        }
-
-        public void setMessages(List<Map<String, String>> messages) {
-            this.messages = messages;
-        }
     }
 
+    /** TTS 入参 */
+    @Data
     public static class TtsRequest {
         private String text;
-
-        public String getText() {
-            return text;
-        }
-
-        public void setText(String text) {
-            this.text = text;
-        }
     }
 }

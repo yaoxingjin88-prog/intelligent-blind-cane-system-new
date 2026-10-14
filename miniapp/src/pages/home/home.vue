@@ -4,7 +4,7 @@
     <scroll-view class="content" scroll-y>
       <view class="home-hero">
         <view class="home-hero-copy">
-          <text class="hero-kicker">Smart Cane</text>
+          <text class="hero-kicker">智能盲杖</text>
           <text class="hero-title">守护出行与安全陪伴</text>
           <text class="hero-desc">查看设备位置、健康动态与 AI 辅助能力，实时掌握盲杖状态。</text>
         </view>
@@ -78,7 +78,7 @@
         <view v-if="activeSosAlert" class="sos-alert-card">
           <view class="sos-alert-head">
             <view class="sos-alert-copy">
-              <text class="sos-alert-kicker">SOS Alert</text>
+              <text class="sos-alert-kicker">紧急求助</text>
               <text class="sos-alert-title">用户端正在发起一键呼救</text>
               <text class="sos-alert-desc">{{ latestGuardianAlert.message }}</text>
             </view>
@@ -147,7 +147,7 @@
         <view class="guardian-section">
           <view class="guardian-header">
             <view class="section-caption compact guardian-caption">
-              <text class="section-kicker">Guardian Care</text>
+              <text class="section-kicker">家属守护</text>
               <text class="section-title">家属远程协同守护</text>
             </view>
             <text class="guardian-status-pill" :class="guardianStatusLevel">{{ guardianStatusText }}</text>
@@ -190,7 +190,7 @@
           <view class="user-terminal-entry-left">
             <view class="user-terminal-icon">🧑</view>
             <view class="user-terminal-info">
-              <text class="user-terminal-kicker">Demo Entry</text>
+              <text class="user-terminal-kicker">用户端演示</text>
               <text class="user-terminal-title">用户端演示</text>
               <text class="user-terminal-desc">查看老人侧接收提醒与 AI 安抚的展示效果</text>
             </view>
@@ -225,7 +225,7 @@
       <!-- 安全守护 -->
       <view class="safety-section">
         <view class="section-caption">
-          <text class="section-kicker">Safety</text>
+          <text class="section-kicker">安全状态</text>
           <text class="section-title">安全守护</text>
         </view>
         <view class="safety-grid">
@@ -258,7 +258,7 @@
       <view class="activity-section">
         <view class="section-header">
           <view class="section-caption compact">
-            <text class="section-kicker">Activity</text>
+            <text class="section-kicker">活动概况</text>
             <text class="section-title">最新动态</text>
           </view>
           <text class="more-btn" @click="navigateToAlarm">查看更多</text>
@@ -287,13 +287,14 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow, onHide } from '@dcloudio/uni-app'
 import { useUserStore, useDeviceStore, useAlarmStore, useElderStore } from '@/store'
 import { getBlindProfile } from '@/api/blind'
 import { handleAlarm as handleAlarmApi } from '@/api/alarm'
 import { getTrajectory } from '@/api/trajectory'
 import { getGuardianCareOverview, sendGuardianComfort, sendGuardianDestination } from '@/api/guardian'
 import { formatRelativeTime } from '@/utils'
+import { createPagePoll } from '@/utils/poll'
 
 const userStore = useUserStore()
 const deviceStore = useDeviceStore()
@@ -482,8 +483,54 @@ const recentActivities = computed(() => {
 })
 
 // 定时器
-let locationTimer = null
-let dataTimer = null
+const locationPoll = createPagePoll(async () => {
+  if (!currentDevice.value || !currentDevice.value.deviceId) return
+  await Promise.all([
+    deviceStore.fetchDeviceLocation(currentDevice.value.deviceId),
+    deviceStore.fetchDeviceStatus(currentDevice.value.deviceId),
+    deviceStore.fetchSensorData(currentDevice.value.deviceId),
+    loadGuardianOverview()
+  ])
+  if (deviceStore.deviceLocation) {
+    const loc = deviceStore.deviceLocation
+    longitude.value = loc.longitude
+    latitude.value = loc.latitude
+    currentAddress.value = loc.address || (loc.latitude.toFixed(4) + ', ' + loc.longitude.toFixed(4))
+
+    const lastPt = trackPoints.value[trackPoints.value.length - 1]
+    if (!lastPt || Math.abs(lastPt.longitude - loc.longitude) > 0.00001 || Math.abs(lastPt.latitude - loc.latitude) > 0.00001) {
+      trackPoints.value.push({ longitude: loc.longitude, latitude: loc.latitude })
+      if (trackPoints.value.length > 200) trackPoints.value.shift()
+    }
+
+    if (trackPoints.value.length >= 2) {
+      polyline.value = [{
+        points: trackPoints.value,
+        color: '#07c160',
+        width: 4,
+        dottedLine: false,
+        arrowLine: true
+      }]
+    }
+
+    markers.value = [{
+      id: 1,
+      longitude: loc.longitude,
+      latitude: loc.latitude,
+      width: 24,
+      height: 34,
+      callout: {
+        content: currentDevice.value.deviceName || '智能盲杖',
+        color: '#333333',
+        fontSize: 12,
+        borderRadius: 8,
+        bgColor: '#ffffff',
+        padding: 8,
+        display: 'ALWAYS'
+      }
+    }]
+  }
+})
 
 const comfortTemplates = [
   '别着急，家属正在关注你，请先在安全区域稍作等待。',
@@ -599,6 +646,7 @@ onMounted(async () => {
 })
 
 onShow(() => {
+  locationPoll.resume()
   refreshGuardianCaches()
   const app = getApp()
   const pendingGuardianSosAnnouncement = !!(app?.globalData?.pendingGuardianSosAnnouncement || uni.getStorageSync('pendingGuardianSosAnnouncement'))
@@ -619,6 +667,10 @@ onShow(() => {
   if (currentDevice.value && currentDevice.value.deviceId) {
     loadGuardianOverview()
   }
+})
+
+onHide(() => {
+  locationPoll.pause()
 })
 
 onUnmounted(() => {
@@ -725,77 +777,12 @@ const loadDeviceData = async () => {
   }
 }
 
-// 开始自动刷新
 const startAutoRefresh = () => {
-  // 每5秒刷新位置和传感器数据（实时监控）
-  locationTimer = setInterval(async () => {
-    if (!currentDevice.value || !currentDevice.value.deviceId) return
-    try {
-      await Promise.all([
-        deviceStore.fetchDeviceLocation(currentDevice.value.deviceId),
-        deviceStore.fetchDeviceStatus(currentDevice.value.deviceId),
-        deviceStore.fetchSensorData(currentDevice.value.deviceId),
-        loadGuardianOverview()
-      ])
-      // 更新地图标记、轨迹线和位置
-      if (deviceStore.deviceLocation) {
-        const loc = deviceStore.deviceLocation
-        longitude.value = loc.longitude
-        latitude.value = loc.latitude
-        currentAddress.value = loc.address || (loc.latitude.toFixed(4) + ', ' + loc.longitude.toFixed(4))
-        
-        // 添加到轨迹点（去重：和上一个点距离太近则跳过）
-        const lastPt = trackPoints.value[trackPoints.value.length - 1]
-        if (!lastPt || Math.abs(lastPt.longitude - loc.longitude) > 0.00001 || Math.abs(lastPt.latitude - loc.latitude) > 0.00001) {
-          trackPoints.value.push({ longitude: loc.longitude, latitude: loc.latitude })
-          // 最多保留200个点
-          if (trackPoints.value.length > 200) trackPoints.value.shift()
-        }
-        
-        // 绘制轨迹线
-        if (trackPoints.value.length >= 2) {
-          polyline.value = [{
-            points: trackPoints.value,
-            color: '#07c160',
-            width: 4,
-            dottedLine: false,
-            arrowLine: true
-          }]
-        }
-        
-        markers.value = [{
-          id: 1,
-          longitude: loc.longitude,
-          latitude: loc.latitude,
-          width: 24,
-          height: 34,
-          callout: {
-            content: currentDevice.value.deviceName || '智能盲杖',
-            color: '#333333',
-            fontSize: 12,
-            borderRadius: 8,
-            bgColor: '#ffffff',
-            padding: 8,
-            display: 'ALWAYS'
-          }
-        }]
-      }
-    } catch (e) {
-      console.error('自动刷新失败', e)
-    }
-  }, 5000)
+  locationPoll.start()
 }
 
-// 停止自动刷新
 const stopAutoRefresh = () => {
-  if (locationTimer) {
-    clearInterval(locationTimer)
-    locationTimer = null
-  }
-  if (dataTimer) {
-    clearInterval(dataTimer)
-    dataTimer = null
-  }
+  locationPoll.stop()
 }
 
 // 切换地图类型
@@ -988,7 +975,6 @@ const chooseGuardianDestination = () => {
 
 // 标记点击
 const onMarkerTap = (e) => {
-  console.log('Marker tapped', e)
 }
 </script>
 

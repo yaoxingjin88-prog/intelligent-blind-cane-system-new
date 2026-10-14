@@ -5,11 +5,28 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+/**
+ * 启动时轻量库表补齐
+ * 用于演示/升级场景：建围栏表、补传感加速度列、统一 utf8mb4，避免手工跑脚本
+ */
 @Configuration
 public class DatabaseInitConfig {
+
+    /**
+     * 应用启动后执行一次 DDL/修复 SQL
+     * 业务步骤：
+     * 1. 确保 electronic_fence 存在
+     * 2. sensor_data 补加速度/置信度列（若缺失）
+     * 3. 关键表字符集转 utf8mb4
+     * 4. 修复历史乱码占位数据
+     *
+     * @param jdbcTemplate JDBC 模板
+     * @return 启动回调
+     */
     @Bean
     public CommandLineRunner initElectronicFenceTable(JdbcTemplate jdbcTemplate) {
         return args -> {
+            // 步骤1：围栏表
             jdbcTemplate.execute(
                     "CREATE TABLE IF NOT EXISTS electronic_fence (" +
                             "id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY," +
@@ -25,18 +42,22 @@ public class DatabaseInitConfig {
                             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci"
             );
             jdbcTemplate.execute("ALTER TABLE electronic_fence CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");
+            // 步骤2：传感表增量列
             addColumnIfMissing(jdbcTemplate, "sensor_data", "accel_x", "ALTER TABLE sensor_data ADD COLUMN accel_x DOUBLE NULL DEFAULT NULL");
             addColumnIfMissing(jdbcTemplate, "sensor_data", "accel_y", "ALTER TABLE sensor_data ADD COLUMN accel_y DOUBLE NULL DEFAULT NULL");
             addColumnIfMissing(jdbcTemplate, "sensor_data", "accel_z", "ALTER TABLE sensor_data ADD COLUMN accel_z DOUBLE NULL DEFAULT NULL");
             addColumnIfMissing(jdbcTemplate, "sensor_data", "fall_confidence", "ALTER TABLE sensor_data ADD COLUMN fall_confidence DOUBLE NULL DEFAULT NULL");
+            // 步骤3：字符集
             jdbcTemplate.execute("ALTER TABLE sensor_data CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");
             jdbcTemplate.execute("ALTER TABLE cane_device CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");
             jdbcTemplate.execute("ALTER TABLE alarm_record CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");
+            // 步骤4：脏数据修复
             jdbcTemplate.update("UPDATE electronic_fence SET fence_name = '默认安全区' WHERE fence_name IS NULL OR REPLACE(fence_name, '?', '') = ''");
             jdbcTemplate.update("UPDATE cane_device SET status = '在线' WHERE status = '??'");
         };
     }
 
+    /** 列不存在时再执行 ALTER，保证幂等可重复启动 */
     private void addColumnIfMissing(JdbcTemplate jdbcTemplate, String tableName, String columnName, String alterSql) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",

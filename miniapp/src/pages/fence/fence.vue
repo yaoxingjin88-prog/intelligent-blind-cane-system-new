@@ -2,7 +2,7 @@
   <view class="fence-page">
     <view class="fence-hero">
       <view class="fence-hero-copy">
-        <text class="hero-kicker">Geo Guard</text>
+        <text class="hero-kicker">电子围栏</text>
         <text class="hero-title">电子围栏与轨迹回放</text>
         <text class="hero-desc">管理常用守护区域、查看当前位置状态，并回放设备移动轨迹。</text>
       </view>
@@ -40,7 +40,7 @@
     <scroll-view v-if="activeModule === 'fence'" class="fence-content" scroll-y>
       <view class="fence-header">
         <view class="section-caption compact">
-          <text class="section-kicker">Fence</text>
+          <text class="section-kicker">围栏列表</text>
           <text class="fence-title">常用守护区域 ({{ fenceList.length }}/5)</text>
         </view>
         <view class="add-btn" @click="showCreateFence = true">
@@ -112,7 +112,7 @@
       <!-- 最近越界记录 -->
       <view class="recent-breach-section" v-if="recentBreaches.length > 0">
         <view class="section-caption compact breach-caption">
-          <text class="section-kicker">Recent</text>
+          <text class="section-kicker">最近动态</text>
           <text class="section-title">最近越界记录</text>
         </view>
         <view class="breach-list">
@@ -131,7 +131,7 @@
     <scroll-view v-if="activeModule === 'trajectory'" class="trajectory-content" scroll-y>
       <view class="trajectory-header">
         <view class="section-caption compact">
-          <text class="section-kicker">Trajectory</text>
+          <text class="section-kicker">轨迹回放</text>
           <text class="trajectory-title">轨迹查询</text>
         </view>
       </view>

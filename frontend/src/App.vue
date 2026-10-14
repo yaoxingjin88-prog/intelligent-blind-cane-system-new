@@ -147,6 +147,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { House, User, Monitor, DataAnalysis, Bell, Guide, Fold, Expand, BellFilled, Setting, SwitchButton, ArrowDown } from '@element-plus/icons-vue'
 import { fetchJson } from './utils/http'
+import { startVisibilityInterval } from './utils/visibilityInterval'
 
 export default {
   name: 'App',
@@ -253,7 +254,7 @@ export default {
         fetchHeaderNotifications()
       }, 2500)
 
-      alarmPollTimer = window.setInterval(() => {
+      alarmPollTimer = startVisibilityInterval(() => {
         fetchHeaderNotifications()
       }, 30000)
       
@@ -273,7 +274,7 @@ export default {
       window.removeEventListener('storage', checkLoginStatus)
       window.removeEventListener('alarm-records-changed', fetchHeaderNotifications)
       if (alarmPollTimer) {
-        window.clearInterval(alarmPollTimer)
+        alarmPollTimer()
         alarmPollTimer = null
       }
     })

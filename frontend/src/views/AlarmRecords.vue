@@ -124,7 +124,8 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { Plus, Check, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { fetchJson } from '../utils/http'
+import { fetchJson, apiFetch } from '../utils/http'
+import { startVisibilityInterval } from '../utils/visibilityInterval'
 
 export default {
   name: 'AlarmRecords',
@@ -236,7 +237,7 @@ export default {
               alarmTime: new Date(addAlarmRecordForm.value.alarmTime).toISOString().slice(0, 19).replace('T', ' ')
             }
             // 调用后端API添加告警记录
-            const response = await fetch('/api/alarm-records', {
+            const response = await apiFetch('/api/alarm-records', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json'
@@ -262,7 +263,7 @@ export default {
     const updateAlarmStatus = async (id, status) => {
       try {
         // 调用后端API更新告警状态
-        const response = await fetch(`/api/alarm-records/status/${id}?status=${status}`, {
+        const response = await apiFetch(`/api/alarm-records/status/${id}?status=${status}`, {
           method: 'PUT'
         })
         const data = await response.json()
@@ -287,7 +288,7 @@ export default {
       }).then(async () => {
         try {
           // 调用后端API删除告警记录
-          const response = await fetch(`/api/alarm-records/${id}`, {
+          const response = await apiFetch(`/api/alarm-records/${id}`, {
             method: 'DELETE'
           })
           const data = await response.json()
@@ -316,16 +317,16 @@ export default {
       currentPage.value = current
     }
     
-    let alarmPageTimer = null
+    let stopAlarmPollingFn = null
     const onAlarmsChanged = () => fetchAlarmRecords()
     const startAlarmPolling = () => {
-      if (alarmPageTimer) return
-      alarmPageTimer = window.setInterval(fetchAlarmRecords, 30000)
+      if (stopAlarmPollingFn) return
+      stopAlarmPollingFn = startVisibilityInterval(fetchAlarmRecords, 30000)
     }
     const stopAlarmPolling = () => {
-      if (alarmPageTimer) {
-        window.clearInterval(alarmPageTimer)
-        alarmPageTimer = null
+      if (stopAlarmPollingFn) {
+        stopAlarmPollingFn()
+        stopAlarmPollingFn = null
       }
     }
     onMounted(() => {

@@ -264,6 +264,7 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { startVisibilityInterval } from '../utils/visibilityInterval'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElNotification } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
@@ -406,6 +407,7 @@ let isPageUnmounted = false
 
 // 定时器
 let refreshTimer: any = null
+let stopRefreshPoll: (() => void) | null = null
 let alarmCheckTimer: any = null
 let activeAlarmNotification: any = null
 let lastAlarmNotificationAt = 0
@@ -936,14 +938,12 @@ const connectWebSocket = () => {
   ws = new WebSocket(wsUrl)
   
   ws.onopen = () => {
-    console.log('WebSocket连接成功')
     ElMessage.success('实时监控已连接')
   }
   
   ws.onmessage = (event) => {
     const message = JSON.parse(event.data)
-    console.log('收到WebSocket消息:', message)
-    
+
     if (message.type === 'SENSOR_DATA') {
       latestData.value = message.sensorData
       deviceStatus.value = '在线'
@@ -961,9 +961,6 @@ const connectWebSocket = () => {
       applyFenceStatus(message.fence)
     } else if (message.type === 'CROSSING_ASSIST') {
       applyCrossingAssist(message.crossingAssist)
-    } else if (message.type === 'CONNECTED') {
-      console.log('服务器确认连接:', message.message)
-    } else if (message.type === 'PONG') {
     }
   }
   
@@ -973,7 +970,6 @@ const connectWebSocket = () => {
   
   ws.onclose = () => {
     if (isPageUnmounted) return
-    console.log('WebSocket连接关闭，5秒后重连...')
     deviceStatus.value = '离线'
     wsReconnectTimer = setTimeout(connectWebSocket, 5000)
   }
@@ -996,18 +992,23 @@ onMounted(async () => {
   await checkLatestAlarm()
   
   connectWebSocket()
-  
-  refreshTimer = setInterval(() => {
+
+  // WebSocket 为主；60s 可见性轮询作兜底（页面隐藏时自动暂停）
+  stopRefreshPoll = startVisibilityInterval(() => {
     refreshLocation()
     checkLatestAlarm()
     loadCrossingAssist()
-  }, 30000)
+  }, 60000)
 })
 
 // 页面卸载
 onUnmounted(() => {
   isPageUnmounted = true
   if (refreshTimer) clearInterval(refreshTimer)
+  if (stopRefreshPoll) {
+    stopRefreshPoll()
+    stopRefreshPoll = null
+  }
   if (alarmCheckTimer) clearInterval(alarmCheckTimer)
   if (wsReconnectTimer) clearTimeout(wsReconnectTimer)
   activeAlarmNotification?.close?.()

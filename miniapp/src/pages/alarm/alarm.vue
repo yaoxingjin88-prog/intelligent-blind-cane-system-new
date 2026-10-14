@@ -2,7 +2,7 @@
   <view class="alarm-page">
     <view class="alarm-hero">
       <view class="alarm-hero-copy">
-        <text class="hero-kicker">Alarm Center</text>
+        <text class="hero-kicker">报警中心</text>
         <text class="hero-title">安全提醒中心</text>
         <text class="hero-desc">集中查看待处理告警、围栏越界与设备异常，及时完成守护反馈。</text>
       </view>
@@ -178,13 +178,9 @@ const loadAlarms = async () => {
   try {
     const res = await getAlarmList()
     const alarmData = res.data || []
-    
-    console.log('后端返回的报警数据:', alarmData)
-    
-    // 映射后端数据到前端格式
+
     const mappedAlarms = alarmData.map(item => {
       const type = item.alarmType || 'unknown'
-      console.log('报警类型:', type)
       return {
         id: item.id,
         alarmType: type,

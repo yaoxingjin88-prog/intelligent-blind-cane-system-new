@@ -15,6 +15,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
+/**
+ * 高德逆地理：经纬度转可读地址（未配置 key 时返回 null）
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

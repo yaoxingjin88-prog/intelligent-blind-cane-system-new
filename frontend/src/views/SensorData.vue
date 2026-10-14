@@ -131,6 +131,7 @@
 import { ref, computed, onMounted, onActivated } from 'vue'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { apiFetch } from '../utils/http'
 
 export default {
   name: 'SensorData',
@@ -213,7 +214,7 @@ export default {
     const fetchSensorData = async () => {
       try {
         // 调用后端API获取传感器数据列表
-        const response = await fetch('/api/sensor-data?limit=300', {
+        const response = await apiFetch('/api/sensor-data?limit=300', {
           cache: 'no-cache'
         })
         if (!response.ok) {
@@ -259,7 +260,7 @@ export default {
               dataTime: new Date(addSensorDataForm.value.dataTime).toISOString().slice(0, 19).replace('T', ' ')
             }
             // 调用后端API添加传感器数据
-            const response = await fetch('/api/sensor-data', {
+            const response = await apiFetch('/api/sensor-data', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json'
@@ -290,7 +291,7 @@ export default {
       }).then(async () => {
         try {
           // 调用后端API删除传感器数据
-          const response = await fetch(`/api/sensor-data/${id}`, {
+          const response = await apiFetch(`/api/sensor-data/${id}`, {
             method: 'DELETE'
           })
           const data = await response.json()

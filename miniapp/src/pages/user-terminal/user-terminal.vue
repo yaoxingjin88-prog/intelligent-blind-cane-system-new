@@ -178,7 +178,8 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow, onHide } from '@dcloudio/uni-app'
+import { createPagePoll } from '@/utils/poll'
 import { useAlarmStore, useDeviceStore, useElderStore, useUserStore } from '@/store'
 import { getBlindProfile } from '@/api/blind'
 import { triggerGuardianSos } from '@/api/guardian'
@@ -196,7 +197,16 @@ const latestGuardianDestination = ref(null)
 const sosFullscreenVisible = ref(false)
 const sosFullscreenMeta = ref(null)
 
-let refreshTimer = null
+const dataPoll = createPagePoll(async () => {
+  refreshMessageCaches()
+  if (!currentDevice.value?.deviceId) return
+  await Promise.all([
+    deviceStore.fetchDeviceStatus(currentDevice.value.deviceId),
+    deviceStore.fetchDeviceLocation(currentDevice.value.deviceId),
+    deviceStore.fetchSensorData(currentDevice.value.deviceId),
+    alarmStore.fetchAlarmList()
+  ])
+})
 
 const currentDevice = computed(() => deviceStore.currentDevice)
 const deviceStatus = computed(() => deviceStore.deviceStatus)
@@ -337,26 +347,11 @@ const loadPageData = async () => {
 }
 
 const startAutoRefresh = () => {
-  clearInterval(refreshTimer)
-  refreshTimer = setInterval(async () => {
-    refreshMessageCaches()
-    if (!currentDevice.value?.deviceId) return
-    try {
-      await Promise.all([
-        deviceStore.fetchDeviceStatus(currentDevice.value.deviceId),
-        deviceStore.fetchDeviceLocation(currentDevice.value.deviceId),
-        deviceStore.fetchSensorData(currentDevice.value.deviceId),
-        alarmStore.fetchAlarmList()
-      ])
-    } catch (error) {
-      console.error('刷新用户端数据失败', error)
-    }
-  }, 5000)
+  dataPoll.start()
 }
 
 const stopAutoRefresh = () => {
-  clearInterval(refreshTimer)
-  refreshTimer = null
+  dataPoll.stop()
 }
 
 const playPrompt = (text, options = {}) => {
@@ -461,8 +456,13 @@ onMounted(async () => {
 })
 
 onShow(() => {
+  dataPoll.resume()
   refreshMessageCaches()
   sosFullscreenVisible.value = !!sosFullscreenMeta.value
+})
+
+onHide(() => {
+  dataPoll.pause()
 })
 
 onUnmounted(() => {

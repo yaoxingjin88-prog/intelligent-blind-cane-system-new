@@ -93,18 +93,14 @@ const connectWebSocket = () => {
   const token = uni.getStorageSync('token')
   const device = uni.getStorageSync('currentDevice')
   if (!token || !device || !device.deviceId) {
-    console.log('[WS] 未登录或未绑定设备，跳过连接')
     return
   }
-  // 已连接则跳过
   if (socketTask) {
     try { socketTask.close() } catch (e) {}
     socketTask = null
   }
 
   const url = `${WS_URL}?deviceId=${encodeURIComponent(device.deviceId)}`
-  // WS_URL 例如 ws://192.168.x.x:8081/ws/alarm
-  console.log('[WS] 连接:', url)
 
   socketTask = uni.connectSocket({
     url,
@@ -112,8 +108,6 @@ const connectWebSocket = () => {
   })
 
   socketTask.onOpen(() => {
-    console.log('[WS] 已连接')
-    // 启动心跳
     clearInterval(heartbeatTimer)
     heartbeatTimer = setInterval(() => {
       if (socketTask) {
@@ -127,10 +121,9 @@ const connectWebSocket = () => {
   socketTask.onMessage((res) => {
     try {
       const msg = JSON.parse(res.data)
-      console.log('[WS] 收到:', msg.type)
       handleWsMessage(msg)
     } catch (e) {
-      console.warn('[WS] 解析失败', res.data)
+      console.warn('[WS] 解析失败')
     }
   })
 
@@ -139,7 +132,6 @@ const connectWebSocket = () => {
   })
 
   socketTask.onClose(() => {
-    console.log('[WS] 已断开，5 秒后重连')
     socketTask = null
     clearInterval(heartbeatTimer)
     clearTimeout(reconnectTimer)
@@ -271,7 +263,6 @@ getApp.__$connectWs = connectWebSocket
 getApp.__$playCrossingPrompt = playCrossingPrompt
 
 onLaunch(() => {
-  console.log('App Launch')
   const app = getApp()
   if (app) {
     app.globalData = app.globalData || {}
@@ -292,16 +283,13 @@ onLaunch(() => {
 })
 
 onShow(() => {
-  console.log('App Show')
   // eslint-disable-next-line
   getApp.__$playCrossingPrompt = playCrossingPrompt
-  // 前台回来后，确保 WS 在线
   if (!socketTask) connectWebSocket()
 })
 
 onHide(() => {
-  console.log('App Hide')
-  // 不主动断开，让系统决定；避免后台短暂切走即断
+  // 不主动断开，避免后台短暂切走即断
 })
 </script>
 

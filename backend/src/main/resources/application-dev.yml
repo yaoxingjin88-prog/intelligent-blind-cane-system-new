@@ -1,0 +1,42 @@
+# =============================================================================
+# 开发环境（profile=dev）
+# 启动：默认即可，或 --spring.profiles.active=dev
+# 覆盖 application.yml 中同名项；密钥仍建议写 application-local.yml
+# =============================================================================
+
+server:
+  port: 8081
+
+spring:
+  datasource:
+    hikari:
+      # 本地连接池略小，减少空闲占用
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+app:
+  security:
+    # 本地可按需关掉鉴权：AUTH_ENABLED=false
+    auth-enabled: ${AUTH_ENABLED:true}
+    # 开发允许测试验证码 123456
+    allow-test-sms-code: ${ALLOW_TEST_SMS:true}
+    # Vite 本项目端口为 3000；用 * 兼容任意本地端口
+    allowed-origins: ${CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*,https://intelligent.shinegoldyao.store}
+    admin-username: ${ADMIN_USERNAME:admin}
+    # 开发可用明文；生产请改 BCrypt
+    admin-password: ${ADMIN_PASSWORD:123456}
+    jwt-secret: ${JWT_SECRET:local-dev-jwt-secret-key-please-rotate-32}
+
+demo:
+  location:
+    # 开发默认强制演示坐标；真实联调设 DEMO_LOCATION_FORCE=false
+    force: ${DEMO_LOCATION_FORCE:true}
+    latitude: 36.321143
+    longitude: 120.397571
+
+logging:
+  level:
+    root: info
+    # 业务包打 debug，便于联调
+    com.ruoyi: debug
+    org.springframework.web: info

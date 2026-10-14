@@ -41,7 +41,7 @@
               </el-button>
             </el-form-item>
             <div class="login-footer">
-              <el-checkbox v-model="rememberMe">记住密码</el-checkbox>
+              <el-checkbox v-model="rememberMe">记住用户名</el-checkbox>
               <el-button type="text" @click="handleForgotPassword">忘记密码？</el-button>
             </div>
             <div class="demo-account-tip">
@@ -72,6 +72,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
+import { apiFetch } from '../utils/http'
 
 export default {
   name: 'Login',
@@ -93,14 +94,21 @@ export default {
     const loading = ref(false)
     const rememberMe = ref(false)
 
-    // 检查本地存储中的记住密码
+    // 仅恢复用户名，不读写明文密码
     onMounted(() => {
       const savedUser = localStorage.getItem('savedUser')
       if (savedUser) {
-        const user = JSON.parse(savedUser)
-        loginForm.value.username = user.username
-        loginForm.value.password = user.password
-        rememberMe.value = true
+        try {
+          const user = JSON.parse(savedUser)
+          loginForm.value.username = user.username || ''
+          rememberMe.value = !!user.username
+          // 清理历史版本可能存下的明文密码
+          if (user.password) {
+            localStorage.setItem('savedUser', JSON.stringify({ username: user.username || '' }))
+          }
+        } catch {
+          localStorage.removeItem('savedUser')
+        }
       }
     })
 
@@ -110,28 +118,43 @@ export default {
         if (valid) {
           loading.value = true
           try {
-            // 这里可以调用后端API进行登录验证
-            // 暂时使用模拟登录，匹配数据库中的用户信息
-            if (loginForm.value.username === 'admin' && loginForm.value.password === '123456') {
-              // 存储登录状态
-              localStorage.setItem('token', 'mock-token')
-              localStorage.setItem('user', JSON.stringify({ username: loginForm.value.username }))
-              
-              // 记住密码
-              if (rememberMe.value) {
-                localStorage.setItem('savedUser', JSON.stringify(loginForm.value))
-              } else {
-                localStorage.removeItem('savedUser')
-              }
-              
-              ElMessage.success('登录成功')
-              router.push('/')
-            } else {
-              ElMessage.error('用户名或密码错误')
+            const response = await apiFetch('/api/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                username: loginForm.value.username,
+                password: loginForm.value.password
+              })
+            })
+            const raw = await response.text()
+            let result
+            try {
+              result = JSON.parse(raw)
+            } catch {
+              ElMessage.error(raw || `登录失败（HTTP ${response.status}）`)
+              return
             }
+            if (result.code !== 200) {
+              ElMessage.error(result.msg || '登录失败')
+              return
+            }
+
+            localStorage.setItem('token', result.data.token)
+            localStorage.setItem('user', JSON.stringify(result.data.userInfo || { username: loginForm.value.username }))
+
+            if (rememberMe.value) {
+              localStorage.setItem('savedUser', JSON.stringify({
+                username: loginForm.value.username
+              }))
+            } else {
+              localStorage.removeItem('savedUser')
+            }
+
+            ElMessage.success('登录成功')
+            router.push('/')
           } catch (error) {
             console.error('登录失败:', error)
-            ElMessage.error('登录失败')
+            ElMessage.error('登录请求失败，请检查后端服务')
           } finally {
             loading.value = false
           }

@@ -46,7 +46,7 @@
       </view>
 
       <view class="profile-section-header">
-        <text class="section-kicker">Services</text>
+        <text class="section-kicker">功能服务</text>
         <text class="section-title">快捷服务</text>
       </view>
 
@@ -125,7 +125,7 @@
 
       <!-- 设置菜单 -->
       <view class="profile-section-header compact">
-        <text class="section-kicker">Settings</text>
+        <text class="section-kicker">设置</text>
         <text class="section-title">更多设置</text>
       </view>
 
@@ -211,9 +211,12 @@ const chartData = computed(() => {
   const total = stats ? (stats.total || 1) : 1
   const weekVal = stats ? (stats.thisWeek || 0) : 0
   const labels = ['一', '二', '三', '四', '五', '六', '日']
+  // 按周内位置做确定性高度，避免每次渲染随机抖动
   return labels.map((label, i) => ({
     label,
-    height: i <= dayIndex ? Math.min(Math.round((weekVal / 7) / total * 100 + Math.random() * 30), 100) : 0,
+    height: i <= dayIndex
+      ? Math.min(Math.round((weekVal / 7) / total * 100 + (i + 1) * 8), 100)
+      : 0,
     active: i === dayIndex
   }))
 })
@@ -334,11 +337,8 @@ const chooseAvatar = () => {
     sizeType: ['compressed'],
     sourceType: ['album'],
     success: (res) => {
-      // 这里应该上传到服务器
+      // 暂存本地预览路径；正式环境需接上传接口
       const tempFilePath = res.tempFilePaths[0]
-      console.log('选择的头像:', tempFilePath)
-      
-      // 模拟上传成功
       userStore.setUserInfo({
         ...userStore.userInfo,
         avatar: tempFilePath

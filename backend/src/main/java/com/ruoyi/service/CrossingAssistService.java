@@ -1,8 +1,8 @@
 package com.ruoyi.service;
 
+import lombok.RequiredArgsConstructor;
 import com.ruoyi.entity.CrossingAssistSnapshot;
 import com.ruoyi.websocket.AlarmWebSocketHandler;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -10,7 +10,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 路口辅助：缓存最新识别快照，并通过 WebSocket 推送给监护端/管理端
+ */
 @Service
+@RequiredArgsConstructor
 public class CrossingAssistService {
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int MOCK_SCENE_COUNT = 5;
@@ -18,9 +22,14 @@ public class CrossingAssistService {
     private final Map<String, CrossingAssistSnapshot> latestSnapshots = new ConcurrentHashMap<>();
     private final Map<String, Integer> lastMockScenes = new ConcurrentHashMap<>();
 
-    @Autowired
-    private AlarmWebSocketHandler alarmWebSocketHandler;
+    private final AlarmWebSocketHandler alarmWebSocketHandler;
 
+    /**
+     * 取设备最新路口辅助快照；无数据时返回默认「暂未识别」态
+     *
+     * @param deviceId 业务设备号
+     * @return 快照
+     */
     public CrossingAssistSnapshot getLatest(String deviceId) {
         CrossingAssistSnapshot snapshot = latestSnapshots.get(deviceId);
         if (snapshot != null) {
@@ -29,13 +38,30 @@ public class CrossingAssistService {
         return buildDefaultSnapshot(deviceId);
     }
 
+    /**
+     * 写入/刷新路口辅助结果并推送
+     * 业务步骤：1. 归一化缺省字段 2. 写入内存缓存 3. WebSocket 推送
+     *
+     * @param deviceId 业务设备号
+     * @param snapshot 识别结果（可部分为空，由服务补全）
+     * @return 归一化后的快照
+     */
     public CrossingAssistSnapshot update(String deviceId, CrossingAssistSnapshot snapshot) {
+        // 步骤1：归一化缺省字段
         CrossingAssistSnapshot normalized = normalize(deviceId, snapshot);
+        // 步骤2：写入内存缓存
         latestSnapshots.put(deviceId, normalized);
+        // 步骤3：WebSocket 推送
         alarmWebSocketHandler.sendCrossingAssist(deviceId, normalized);
         return normalized;
     }
 
+    /**
+     * 演示用：轮换预设场景并走同一套 update 推送链路
+     *
+     * @param deviceId 业务设备号
+     * @return 推送后的快照
+     */
     public CrossingAssistSnapshot mock(String deviceId) {
         CrossingAssistSnapshot snapshot = new CrossingAssistSnapshot();
         int scene = nextMockScene(deviceId);

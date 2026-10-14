@@ -1,9 +1,10 @@
 package com.ruoyi.service;
 
+import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import com.ruoyi.entity.CaneDevice;
 import com.ruoyi.entity.SensorData;
 import jakarta.annotation.PreDestroy;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -18,13 +19,17 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 设备联调模拟：定时生成传感样本并走正式入库链路，便于无硬件时联调
+ */
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class DeviceTestSimulationService {
     private static final int REPORT_INTERVAL_SECONDS = 10;
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    @Autowired
-    private SensorDataService sensorDataService;
+    private final SensorDataService sensorDataService;
 
     private final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(4, runnable -> {
         Thread thread = new Thread(runnable);
@@ -35,6 +40,12 @@ public class DeviceTestSimulationService {
 
     private final Map<String, ScheduledFuture<?>> runningTasks = new ConcurrentHashMap<>();
 
+    /**
+     * 启动指定设备的定时模拟上报（已在跑则失败）
+     *
+     * @param device 设备档案
+     * @return 是否成功启动
+     */
     public synchronized boolean startSimulation(CaneDevice device) {
         if (device == null || device.getDeviceId() == null || device.getDeviceId().isBlank()) {
             return false;
@@ -49,6 +60,12 @@ public class DeviceTestSimulationService {
         return true;
     }
 
+    /**
+     * 停止指定设备的模拟上报
+     *
+     * @param deviceId 业务设备号
+     * @return 是否成功停止
+     */
     public synchronized boolean stopSimulation(String deviceId) {
         if (deviceId == null || deviceId.isBlank()) {
             return false;
@@ -61,17 +78,26 @@ public class DeviceTestSimulationService {
         return true;
     }
 
+    /** 当前仍在模拟中的设备号集合（顺带清理已结束任务） */
     public synchronized Set<String> getRunningDeviceIds() {
         runningTasks.entrySet().removeIf(entry -> entry.getValue() == null || entry.getValue().isCancelled() || entry.getValue().isDone());
         return new TreeSet<>(runningTasks.keySet());
     }
 
+    /**
+     * 生成一条模拟传感样本并入库（偶发大力加速度，由正式链路判跌倒）
+     * 业务步骤：1. 取基准坐标并随机扰动 2. 填充传感字段 3. 走 addSensorData 正式链路
+     *
+     * @param deviceId 业务设备号
+     */
     private void pushSample(String deviceId) {
         try {
+            // 步骤1：取基准坐标并随机扰动
             double[] baseCoordinate = getBaseCoordinate(deviceId);
             ThreadLocalRandom random = ThreadLocalRandom.current();
             boolean simulatedFall = random.nextDouble() < 0.02;
 
+            // 步骤2：填充传感字段
             SensorData sensorData = new SensorData();
             sensorData.setDeviceId(deviceId);
             sensorData.setObstacleDistance(round(35 + random.nextDouble() * 95));
@@ -84,9 +110,10 @@ public class DeviceTestSimulationService {
             sensorData.setTemperature(round(20 + random.nextDouble() * 10));
             sensorData.setHumidity(round(40 + random.nextDouble() * 20));
             sensorData.setDataTime(LocalDateTime.now().format(DATE_TIME_FORMATTER));
+            // 步骤3：走 addSensorData 正式链路
             sensorDataService.addSensorData(sensorData);
         } catch (Exception e) {
-            System.err.println("设备测试模拟上报失败: " + e.getMessage());
+            log.warn("设备测试模拟上报失败: {}", e.getMessage());
         }
     }
 

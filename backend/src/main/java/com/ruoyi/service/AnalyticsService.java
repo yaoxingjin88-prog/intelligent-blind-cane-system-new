@@ -1,8 +1,8 @@
 package com.ruoyi.service;
 
+import lombok.RequiredArgsConstructor;
 import com.ruoyi.entity.CaneDevice;
 import com.ruoyi.entity.SensorData;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -20,78 +20,120 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
 
+/**
+ * 管理端数据分析看板：概览指标、趋势、报警分布、设备健康与热力点（带短时缓存）
+ */
 @Service
+@RequiredArgsConstructor
 public class AnalyticsService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final long DASHBOARD_CACHE_MS = 30_000L;
 
     private volatile DashboardCache dashboardCache;
+    private volatile CompletableFuture<Map<String, Object>> loadingFuture;
 
-    @Autowired
-    private CaneDeviceService caneDeviceService;
-    @Autowired
-    private SensorDataService sensorDataService;
-    @Autowired
-    private AlarmRecordService alarmRecordService;
+    private final CaneDeviceService caneDeviceService;
+    private final SensorDataService sensorDataService;
+    private final AlarmRecordService alarmRecordService;
 
+    /**
+     * 获取看板聚合数据（30s 缓存；并发请求合并为一次构建）
+     * 业务步骤：1. 命中缓存则直接返回 2. 单飞异步构建并回填缓存 3. 等待构建结果
+     *
+     * @return overview / activityTrend / batteryTrend / alarmDistribution 等
+     */
     public Map<String, Object> getDashboardData() {
+        // 步骤1：命中缓存则直接返回
         long now = System.currentTimeMillis();
         DashboardCache cached = dashboardCache;
         if (cached != null && cached.expiresAt > now) {
             return cached.data;
         }
 
-        synchronized (this) {
-            now = System.currentTimeMillis();
-            cached = dashboardCache;
-            if (cached != null && cached.expiresAt > now) {
-                return cached.data;
-            }
-
-            List<CaneDevice> devices = safeList(caneDeviceService.getAllDevices());
-            List<SensorData> sensorDataList = safeList(sensorDataService.getSensorDataSinceDaysLimited(7, 2000));
-            int sensorTotalCount = sensorDataService.countAllSensorData();
-            int alarmTotalCount = alarmRecordService.countAllAlarmRecords();
-            int unhandledAlarmCount = alarmRecordService.countUnhandledAlarmRecords();
-            int riskEventCount = sensorDataService.countRiskEventsSinceDays(7);
-            int activeDevicesToday = sensorDataService.countActiveDevicesToday();
-
-            Map<String, CaneDevice> deviceMap = devices.stream()
-                    .filter(device -> device.getDeviceId() != null)
-                    .collect(Collectors.toMap(CaneDevice::getDeviceId, device -> device, (left, right) -> left, LinkedHashMap::new));
-
-            Map<String, SensorData> latestSensorByDevice = new HashMap<>();
-            for (SensorData sensorData : safeList(sensorDataService.getLatestSensorDataForAllDevices())) {
-                if (sensorData.getDeviceId() != null) {
-                    latestSensorByDevice.put(sensorData.getDeviceId(), sensorData);
+        // 步骤2：单飞异步构建并回填缓存
+        CompletableFuture<Map<String, Object>> inFlight = loadingFuture;
+        if (inFlight == null || inFlight.isCompletedExceptionally()) {
+            synchronized (this) {
+                now = System.currentTimeMillis();
+                cached = dashboardCache;
+                if (cached != null && cached.expiresAt > now) {
+                    return cached.data;
+                }
+                inFlight = loadingFuture;
+                if (inFlight == null || inFlight.isCompletedExceptionally()) {
+                    final CompletableFuture<Map<String, Object>> created =
+                            CompletableFuture.supplyAsync(this::buildDashboardData);
+                    loadingFuture = created;
+                    inFlight = created;
+                    created.whenComplete((data, err) -> {
+                        if (err == null && data != null) {
+                            dashboardCache = new DashboardCache(data, System.currentTimeMillis() + DASHBOARD_CACHE_MS);
+                        }
+                        if (loadingFuture == created) {
+                            loadingFuture = null;
+                        }
+                    });
                 }
             }
-
-            Map<String, Long> unhandledByDevice = alarmRecordService.getUnhandledCountByDevice().stream()
-                    .filter(row -> row.get("deviceId") != null)
-                    .collect(Collectors.toMap(
-                            row -> String.valueOf(row.get("deviceId")),
-                            row -> ((Number) row.getOrDefault("unhandledCount", 0)).longValue(),
-                            Long::sum,
-                            LinkedHashMap::new
-                    ));
-
-            Map<String, Object> overview = buildOverview(devices, unhandledAlarmCount, alarmTotalCount, riskEventCount, activeDevicesToday, sensorTotalCount);
-
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("overview", overview);
-            result.put("activityTrend", buildActivityTrend(sensorDataList));
-            result.put("batteryTrend", buildBatteryTrend(devices));
-            result.put("alarmDistribution", buildAlarmDistributionFromStats(alarmRecordService.getAlarmTypeDistribution()));
-            result.put("deviceRanking", buildDeviceRankingFromStats(alarmRecordService.getDeviceAlarmStats(6), deviceMap));
-            result.put("deviceHealth", buildDeviceHealth(devices, latestSensorByDevice, unhandledByDevice));
-            result.put("heatmapPoints", buildHeatmapPoints(sensorDataList, deviceMap));
-
-            dashboardCache = new DashboardCache(result, now + DASHBOARD_CACHE_MS);
-            return result;
         }
+
+        // 步骤3：等待构建结果
+        try {
+            return inFlight.join();
+        } catch (CompletionException ex) {
+            Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("看板数据加载失败", cause);
+        }
+    }
+
+    /** 拉取设备/传感/报警统计并组装各看板模块 */
+    private Map<String, Object> buildDashboardData() {
+        List<CaneDevice> devices = safeList(caneDeviceService.getAllDevices());
+        List<SensorData> sensorDataList = safeList(sensorDataService.getSensorDataSinceDaysLimited(7, 2000));
+        int sensorTotalCount = sensorDataService.countAllSensorData();
+        int alarmTotalCount = alarmRecordService.countAllAlarmRecords();
+        int unhandledAlarmCount = alarmRecordService.countUnhandledAlarmRecords();
+        int riskEventCount = sensorDataService.countRiskEventsSinceDays(7);
+        int activeDevicesToday = sensorDataService.countActiveDevicesToday();
+
+        Map<String, CaneDevice> deviceMap = devices.stream()
+                .filter(device -> device.getDeviceId() != null)
+                .collect(Collectors.toMap(CaneDevice::getDeviceId, device -> device, (left, right) -> left, LinkedHashMap::new));
+
+        Map<String, SensorData> latestSensorByDevice = new HashMap<>();
+        for (SensorData sensorData : safeList(sensorDataService.getLatestSensorDataForAllDevices())) {
+            if (sensorData.getDeviceId() != null) {
+                latestSensorByDevice.put(sensorData.getDeviceId(), sensorData);
+            }
+        }
+
+        Map<String, Long> unhandledByDevice = alarmRecordService.getUnhandledCountByDevice().stream()
+                .filter(row -> row.get("deviceId") != null)
+                .collect(Collectors.toMap(
+                        row -> String.valueOf(row.get("deviceId")),
+                        row -> ((Number) row.getOrDefault("unhandledCount", 0)).longValue(),
+                        Long::sum,
+                        LinkedHashMap::new
+                ));
+
+        Map<String, Object> overview = buildOverview(devices, unhandledAlarmCount, alarmTotalCount, riskEventCount, activeDevicesToday, sensorTotalCount);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("overview", overview);
+        result.put("activityTrend", buildActivityTrend(sensorDataList));
+        result.put("batteryTrend", buildBatteryTrend(devices));
+        result.put("alarmDistribution", buildAlarmDistributionFromStats(alarmRecordService.getAlarmTypeDistribution()));
+        result.put("deviceRanking", buildDeviceRankingFromStats(alarmRecordService.getDeviceAlarmStats(6), deviceMap));
+        result.put("deviceHealth", buildDeviceHealth(devices, latestSensorByDevice, unhandledByDevice));
+        result.put("heatmapPoints", buildHeatmapPoints(sensorDataList, deviceMap));
+        return result;
     }
 
     private Map<String, Object> buildOverview(

@@ -1,39 +1,82 @@
-import axios from 'axios'
+/**
+ * 统一 HTTP 入口：内部走 utils/http.js（fetch + 重试 + Token）。
+ * 对外保持 axios 风格 { data }，便于存量页面少改动。
+ */
+import { fetchJson } from './http.js'
 
-type RetryConfig = {
-  __retryCount?: number
-  __retryCountMax?: number
+type RequestConfig = {
+  params?: Record<string, unknown>
+  signal?: AbortSignal
+  headers?: Record<string, string>
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-
-const isRetryable = (error: any) => {
-  const status = error?.response?.status
-  if (status === 502 || status === 503 || status === 504) return true
-  if (!error?.response && (error?.code === 'ECONNABORTED' || error?.message?.includes('Network Error'))) {
-    return true
-  }
-  return false
+const buildUrl = (url: string, params?: Record<string, unknown>) => {
+  if (!params) return url
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null) return
+    search.set(key, String(value))
+  })
+  const query = search.toString()
+  return query ? `${url}${url.includes('?') ? '&' : '?'}${query}` : url
 }
 
-axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL || ''
-axios.defaults.timeout = 20000
+const wrap = async <T = any>(promise: Promise<T>) => {
+  const data = await promise
+  return { data }
+}
 
-axios.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const config = (error.config || {}) as typeof error.config & RetryConfig
-    const maxRetries = config.__retryCountMax ?? 2
-    config.__retryCount = config.__retryCount || 0
+const http = {
+  get(url: string, config: RequestConfig = {}) {
+    return wrap(
+      fetchJson(buildUrl(url, config.params), {
+        signal: config.signal,
+        headers: config.headers
+      })
+    )
+  },
 
-    if (config.__retryCount < maxRetries && isRetryable(error)) {
-      config.__retryCount += 1
-      const delay = 600 * config.__retryCount
-      await sleep(delay)
-      return axios(config)
-    }
-    return Promise.reject(error)
+  post(url: string, body?: unknown, config: RequestConfig = {}) {
+    return wrap(
+      fetchJson(buildUrl(url, config.params), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.headers || {})
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: config.signal
+      })
+    )
+  },
+
+  put(url: string, body?: unknown, config: RequestConfig = {}) {
+    return wrap(
+      fetchJson(buildUrl(url, config.params), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.headers || {})
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: config.signal
+      })
+    )
+  },
+
+  delete(url: string, config: RequestConfig = {}) {
+    return wrap(
+      fetchJson(buildUrl(url, config.params), {
+        method: 'DELETE',
+        headers: config.headers,
+        signal: config.signal
+      })
+    )
+  },
+
+  isCancel(error: any) {
+    return error?.name === 'AbortError' || error?.code === 'ERR_CANCELED'
   }
-)
+}
 
-export default axios
+export default http

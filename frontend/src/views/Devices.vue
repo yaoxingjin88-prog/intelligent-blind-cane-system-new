@@ -204,7 +204,7 @@ import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus, Edit, Delete, View } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { fetchJson } from '../utils/http'
+import { fetchJson, apiFetch } from '../utils/http'
 
 export default {
   name: 'Devices',
@@ -389,7 +389,7 @@ export default {
               batteryLevel: parseInt(addDeviceForm.value.batteryLevel)
             }
             // 调用后端API添加设备
-            const response = await fetch('/api/devices', {
+            const response = await apiFetch('/api/devices', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json'
@@ -426,7 +426,7 @@ export default {
               id: parseInt(editDeviceForm.value.id)
             }
             // 调用后端API更新设备
-            const response = await fetch('/api/devices', {
+            const response = await apiFetch('/api/devices', {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json'
@@ -457,7 +457,7 @@ export default {
       try {
         const running = isTesting(row.deviceId)
         const action = running ? 'stop' : 'start'
-        const response = await fetch(`/api/devices/${row.id}/test/${action}`, {
+        const response = await apiFetch(`/api/devices/${row.id}/test/${action}`, {
           method: 'POST'
         })
         const data = await response.json()
@@ -481,7 +481,7 @@ export default {
       }).then(async () => {
         try {
           // 调用后端API删除设备
-          const response = await fetch(`/api/devices/${id}`, {
+          const response = await apiFetch(`/api/devices/${id}`, {
             method: 'DELETE'
           })
           const data = await response.json()

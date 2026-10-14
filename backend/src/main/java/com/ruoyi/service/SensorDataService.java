@@ -1,45 +1,54 @@
 package com.ruoyi.service;
 
-import com.ruoyi.entity.AlarmRecord;
+import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import com.ruoyi.entity.CaneDevice;
 import com.ruoyi.entity.FenceEvaluationResult;
 import com.ruoyi.entity.SensorData;
-import com.ruoyi.entity.VisuallyImpairedUser;
-import com.ruoyi.mapper.AlarmRecordMapper;
 import com.ruoyi.mapper.CaneDeviceMapper;
 import com.ruoyi.mapper.SensorDataMapper;
-import com.ruoyi.mapper.VisuallyImpairedUserMapper;
+import com.ruoyi.utils.GeoUtils;
 import com.ruoyi.websocket.AlarmWebSocketHandler;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 传感器数据业务：入库、跌倒判定、围栏联动、监护推送
+ */
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class SensorDataService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final Map<String, String> lastGuardianAlertTypes = new ConcurrentHashMap<>();
+    private static final double STATIONARY_RADIUS_METERS = 35.0;
+    private static final long STATIONARY_THRESHOLD_MINUTES = 20L;
 
-    @Autowired
-    private SensorDataMapper sensorDataMapper;
-    @Autowired
-    private CaneDeviceMapper caneDeviceMapper;
-    @Autowired
-    private VisuallyImpairedUserMapper userMapper;
-    @Autowired
-    private AlarmRecordMapper alarmRecordMapper;
-    @Autowired
-    private AlarmWebSocketHandler alarmWebSocketHandler;
-    @Autowired
-    private ElectronicFenceService electronicFenceService;
+    private final Map<String, String> lastGuardianAlertTypes = new ConcurrentHashMap<>();
+    /** 每设备最新一条（写穿，减少读库） */
+    private final Map<String, SensorData> latestByDevice = new ConcurrentHashMap<>();
+    /** 已确认存在的设备，避免每次上报都查 cane_device */
+    private final Set<String> knownDeviceIds = ConcurrentHashMap.newKeySet();
+    /** 静止起点：相对上次位置未明显移动则累计时长 */
+    private final Map<String, StationaryTracker> stationaryTrackers = new ConcurrentHashMap<>();
+
+    private final SensorDataMapper sensorDataMapper;
+    private final CaneDeviceMapper caneDeviceMapper;
+    private final AlarmWebSocketHandler alarmWebSocketHandler;
+    private final ElectronicFenceService electronicFenceService;
+    private final AlarmNotifyService alarmNotifyService;
 
     public List<SensorData> getAllSensorData() {
-        return sensorDataMapper.getAllSensorData();
+        return getRecentSensorData(1000);
     }
 
     public List<SensorData> getRecentSensorData(Integer limit) {
@@ -68,7 +77,16 @@ public class SensorDataService {
     }
 
     public List<SensorData> getLatestSensorDataForAllDevices() {
-        return sensorDataMapper.getLatestForAllDevices();
+        List<SensorData> fromDb = sensorDataMapper.getLatestForAllDevices();
+        if (fromDb != null) {
+            for (SensorData item : fromDb) {
+                if (item != null && item.getDeviceId() != null) {
+                    latestByDevice.put(item.getDeviceId(), item);
+                }
+            }
+            return fromDb;
+        }
+        return new ArrayList<>(latestByDevice.values());
     }
 
     public int countAllSensorData() {
@@ -79,52 +97,93 @@ public class SensorDataService {
         return sensorDataMapper.getSensorDataById(id);
     }
 
+    /**
+     * 硬件上报传感器数据（核心入库链路）
+     * 业务步骤：
+     * 1. 归一化加速度并判定跌倒
+     * 2. 读取上一条，用于跌倒边沿去重
+     * 3. 设备不存在则自动注册
+     * 4. 写入 sensor_data 并刷新内存最新值
+     * 5. 电子围栏判定 + WebSocket 推送
+     * 6. 跌倒/越界边沿触发报警
+     *
+     * @param sensorData 硬件上报体
+     */
     public void addSensorData(SensorData sensorData) {
+        // 步骤1：跌倒归一化
         normalizeSensorData(sensorData);
-        SensorData previousLatestSensorData = sensorDataMapper.getLatestByDeviceId(sensorData.getDeviceId());
-        // 检查用户是否存在，如果不存在则创建默认用户
-        try {
-            VisuallyImpairedUser user = new VisuallyImpairedUser();
-            user.setUsername("default");
-            user.setPassword("123456");
-            user.setName("默认用户");
-            user.setPhone("13800138000");
-            user.setIdCard("110101199001011234");
-            user.setAddress("默认地址");
-            userMapper.insert(user);
-        } catch (Exception e) {
-            // 用户已存在，无需处理
-        }
-        
-        // 检查设备是否存在，如果不存在则创建默认设备
-        try {
-            CaneDevice device = new CaneDevice();
-            device.setDeviceId(sensorData.getDeviceId());
-            device.setUserId(1L); // 默认用户ID
-            device.setBatteryLevel(100); // 默认电池电量
-            device.setStatus("在线"); // 默认状态
-            caneDeviceMapper.insert(device);
-        } catch (Exception e) {
-            // 设备已存在，无需处理
-        }
-        
-        sensorDataMapper.insert(sensorData);
-        SensorData latestSensorData = sensorDataMapper.getLatestByDeviceId(sensorData.getDeviceId());
-        FenceEvaluationResult fenceEvaluationResult = electronicFenceService.evaluate(sensorData.getDeviceId(), latestSensorData);
-        alarmWebSocketHandler.sendSensorData(sensorData.getDeviceId(), latestSensorData, fenceEvaluationResult);
-        if (fenceEvaluationResult != null) {
-            alarmWebSocketHandler.sendFenceStatus(sensorData.getDeviceId(), fenceEvaluationResult);
-        }
-        pushGuardianAlertIfNeeded(latestSensorData, fenceEvaluationResult);
-        
-        boolean fallTriggered = Boolean.TRUE.equals(latestSensorData.getIsFall())
-                && (previousLatestSensorData == null || !Boolean.TRUE.equals(previousLatestSensorData.getIsFall()));
-        if (fallTriggered) {
-            createAlarmAndNotify(latestSensorData, "摔倒报警");
+        String deviceId = sensorData.getDeviceId();
+
+        // 步骤2：取上一条，供边沿判断
+        SensorData previousLatest = deviceId == null ? null : latestByDevice.get(deviceId);
+        if (previousLatest == null && deviceId != null) {
+            previousLatest = sensorDataMapper.getLatestByDeviceId(deviceId);
         }
 
-        if (fenceEvaluationResult != null && Boolean.TRUE.equals(fenceEvaluationResult.getTriggered())) {
-            createAlarmAndNotify(latestSensorData, "电子围栏越界报警");
+        // 步骤3：确保设备档案存在
+        ensureDeviceExists(deviceId);
+
+        // 步骤4：落库 + 写穿缓存
+        sensorDataMapper.insert(sensorData);
+        if (sensorData.getCreateTime() == null || sensorData.getCreateTime().isBlank()) {
+            sensorData.setCreateTime(LocalDateTime.now().format(DATE_TIME_FORMATTER));
+        }
+        if (deviceId != null) {
+            latestByDevice.put(deviceId, sensorData);
+        }
+
+        // 步骤5：围栏判定与实时推送（复用入参，避免再查 latest）
+        SensorData latestSensorData = sensorData;
+        FenceEvaluationResult fenceEvaluationResult = electronicFenceService.evaluate(deviceId, latestSensorData);
+        alarmWebSocketHandler.sendSensorData(deviceId, latestSensorData, fenceEvaluationResult);
+        if (fenceEvaluationResult != null) {
+            alarmWebSocketHandler.sendFenceStatus(deviceId, fenceEvaluationResult);
+        }
+        pushGuardianAlertIfNeeded(latestSensorData, fenceEvaluationResult);
+
+        // 步骤6：边沿告警（持续跌倒/持续在外不重复刷）
+        boolean fallTriggered = Boolean.TRUE.equals(latestSensorData.getIsFall())
+                && (previousLatest == null || !Boolean.TRUE.equals(previousLatest.getIsFall()));
+        if (fallTriggered) {
+            alarmNotifyService.createAlarmAndNotify(deviceId, "摔倒报警");
+        }
+
+        boolean fenceTriggered = fenceEvaluationResult != null
+                && Boolean.TRUE.equals(fenceEvaluationResult.getTriggered());
+        if (fenceTriggered) {
+            alarmNotifyService.createAlarmAndNotify(deviceId, "电子围栏越界报警");
+        }
+
+        log.info("sensor.ingest deviceId={} fall={} fallTriggered={} fenceTriggered={}",
+                deviceId,
+                Boolean.TRUE.equals(latestSensorData.getIsFall()),
+                fallTriggered,
+                fenceTriggered);
+    }
+
+    private void ensureDeviceExists(String deviceId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            return;
+        }
+        if (knownDeviceIds.contains(deviceId)) {
+            return;
+        }
+        CaneDevice existing = caneDeviceMapper.getDeviceByDeviceId(deviceId);
+        if (existing != null) {
+            knownDeviceIds.add(deviceId);
+            return;
+        }
+        try {
+            CaneDevice device = new CaneDevice();
+            device.setDeviceId(deviceId);
+            device.setUserId(1L);
+            device.setBatteryLevel(100);
+            device.setStatus("在线");
+            caneDeviceMapper.insert(device);
+            knownDeviceIds.add(deviceId);
+        } catch (Exception e) {
+            knownDeviceIds.add(deviceId);
+            log.debug("设备可能已存在 deviceId={}: {}", deviceId, e.getMessage());
         }
     }
 
@@ -139,6 +198,7 @@ public class SensorDataService {
             return;
         }
 
+        // 加速度按 g 归一：静止约 1g。偏离过大视为冲击/失重；阈值来自样机联调经验，非医学标准
         double magnitude = Math.sqrt(accelX * accelX + accelY * accelY + accelZ * accelZ);
         double deviation = Math.abs(magnitude - 1.0);
         double confidence = clamp((deviation - 0.35) / 1.35, 0.0, 1.0);
@@ -158,83 +218,63 @@ public class SensorDataService {
 
     private void pushGuardianAlertIfNeeded(SensorData latestSensorData, FenceEvaluationResult fenceEvaluationResult) {
         String deviceId = latestSensorData.getDeviceId();
-        String alertType = resolveGuardianAlertType(deviceId, latestSensorData, fenceEvaluationResult);
-        if ("NORMAL".equals(alertType)) {
-            lastGuardianAlertTypes.remove(deviceId);
+        Long stationaryMinutes = updateAndGetStationaryMinutes(latestSensorData);
+
+        if (Boolean.TRUE.equals(latestSensorData.getIsFall())) {
+            publishGuardianAlertOnce(deviceId, "FALL", "danger", "检测到跌倒异常，请家属尽快确认盲杖持有人当前状态。");
             return;
         }
+        if (fenceEvaluationResult != null && Boolean.TRUE.equals(fenceEvaluationResult.getTriggered())) {
+            publishGuardianAlertOnce(deviceId, "FENCE", "danger", "设备已离开设定守护区域，请及时联系并确认当前位置。");
+            return;
+        }
+
+        CaneDevice device = caneDeviceMapper.getDeviceByDeviceId(deviceId);
+        if (device != null && device.getBatteryLevel() != null && device.getBatteryLevel() <= 20) {
+            publishGuardianAlertOnce(deviceId, "LOW_BATTERY", "warning",
+                    "盲杖电量偏低，当前剩余约 " + device.getBatteryLevel() + "% ，建议尽快返程或安排充电。");
+            return;
+        }
+        if (stationaryMinutes != null && stationaryMinutes >= STATIONARY_THRESHOLD_MINUTES) {
+            publishGuardianAlertOnce(deviceId, "INACTIVE", "warning",
+                    "设备已连续静止约 " + stationaryMinutes + " 分钟，建议家属主动发起关怀确认。");
+            return;
+        }
+        lastGuardianAlertTypes.remove(deviceId);
+    }
+
+    private void publishGuardianAlertOnce(String deviceId, String alertType, String level, String message) {
         String previousType = lastGuardianAlertTypes.get(deviceId);
         if (alertType.equals(previousType)) {
             return;
         }
         lastGuardianAlertTypes.put(deviceId, alertType);
-        if ("FALL".equals(alertType)) {
-            alarmWebSocketHandler.sendGuardianAlert(deviceId, "FALL", "danger", "检测到跌倒异常，请家属尽快确认盲杖持有人当前状态。");
-            return;
-        }
-        if ("FENCE".equals(alertType)) {
-            alarmWebSocketHandler.sendGuardianAlert(deviceId, "FENCE", "danger", "设备已离开设定守护区域，请及时联系并确认当前位置。");
-            return;
-        }
-        if ("LOW_BATTERY".equals(alertType)) {
-            CaneDevice device = caneDeviceMapper.getDeviceByDeviceId(deviceId);
-            int batteryLevel = device != null && device.getBatteryLevel() != null ? device.getBatteryLevel() : 0;
-            alarmWebSocketHandler.sendGuardianAlert(deviceId, "LOW_BATTERY", "warning", "盲杖电量偏低，当前剩余约 " + batteryLevel + "% ，建议尽快返程或安排充电。");
-            return;
-        }
-        if ("INACTIVE".equals(alertType)) {
-            Long inactiveMinutes = calculateStationaryMinutes(deviceId);
-            long minutes = inactiveMinutes == null ? 0L : inactiveMinutes;
-            alarmWebSocketHandler.sendGuardianAlert(deviceId, "INACTIVE", "warning", "设备已连续静止约 " + minutes + " 分钟，建议家属主动发起关怀确认。");
-        }
+        alarmWebSocketHandler.sendGuardianAlert(deviceId, alertType, level, message);
     }
 
-    private String resolveGuardianAlertType(String deviceId, SensorData latestSensorData, FenceEvaluationResult fenceEvaluationResult) {
-        if (Boolean.TRUE.equals(latestSensorData.getIsFall())) {
-            return "FALL";
+    /**
+     * 用当前点相对静止起点的位移判断，避免每次拉 1 小时轨迹。
+     */
+    private Long updateAndGetStationaryMinutes(SensorData current) {
+        String deviceId = current.getDeviceId();
+        if (deviceId == null || current.getLatitude() == null || current.getLongitude() == null) {
+            return null;
         }
-        if (fenceEvaluationResult != null && Boolean.TRUE.equals(fenceEvaluationResult.getTriggered())) {
-            return "FENCE";
+        LocalDateTime now = parseSensorTime(current);
+        if (now == null) {
+            now = LocalDateTime.now();
         }
-        CaneDevice device = caneDeviceMapper.getDeviceByDeviceId(deviceId);
-        if (device != null && device.getBatteryLevel() != null && device.getBatteryLevel() <= 20) {
-            return "LOW_BATTERY";
-        }
-        Long stationaryMinutes = calculateStationaryMinutes(deviceId);
-        if (stationaryMinutes != null && stationaryMinutes >= 20) {
-            return "INACTIVE";
-        }
-        return "NORMAL";
-    }
 
-    private Long calculateStationaryMinutes(String deviceId) {
-        List<SensorData> points = sensorDataMapper.getTrajectory(deviceId, 1);
-        if (points == null || points.size() < 3) {
+        StationaryTracker tracker = stationaryTrackers.get(deviceId);
+        if (tracker == null
+                || GeoUtils.haversineMeters(tracker.lat, tracker.lng, current.getLatitude(), current.getLongitude())
+                > STATIONARY_RADIUS_METERS) {
+            stationaryTrackers.put(deviceId, new StationaryTracker(current.getLatitude(), current.getLongitude(), now));
             return null;
         }
-        SensorData first = points.get(0);
-        SensorData last = points.get(points.size() - 1);
-        LocalDateTime start = parseSensorTime(first);
-        LocalDateTime end = parseSensorTime(last);
-        if (start == null || end == null) {
-            return null;
-        }
-        long minutes = Math.max(0, Duration.between(start, end).toMinutes());
-        if (minutes < 20) {
-            return null;
-        }
-        if (first.getLatitude() == null || first.getLongitude() == null) {
-            return null;
-        }
-        for (SensorData point : points) {
-            if (point.getLatitude() == null || point.getLongitude() == null) {
-                return null;
-            }
-            if (calculateDistance(first.getLatitude(), first.getLongitude(), point.getLatitude(), point.getLongitude()) > 35) {
-                return null;
-            }
-        }
-        return minutes;
+
+        long minutes = Math.max(0, Duration.between(tracker.since, now).toMinutes());
+        return minutes >= STATIONARY_THRESHOLD_MINUTES ? minutes : null;
     }
 
     private LocalDateTime parseSensorTime(SensorData sensorData) {
@@ -251,37 +291,6 @@ public class SensorDataService {
         }
     }
 
-    private double calculateDistance(double lat1, double lng1, double lat2, double lng2) {
-        double earthRadius = 6371000.0;
-        double latRad1 = Math.toRadians(lat1);
-        double latRad2 = Math.toRadians(lat2);
-        double deltaLat = Math.toRadians(lat2 - lat1);
-        double deltaLng = Math.toRadians(lng2 - lng1);
-        double a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2)
-                + Math.cos(latRad1) * Math.cos(latRad2)
-                * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return earthRadius * c;
-    }
-    
-    private void createAlarmAndNotify(SensorData sensorData, String alarmType) {
-        try {
-            AlarmRecord alarmRecord = new AlarmRecord();
-            alarmRecord.setDeviceId(sensorData.getDeviceId());
-            alarmRecord.setAlarmType(alarmType);
-            alarmRecord.setStatus("0");
-            alarmRecord.setAlarmTime(LocalDateTime.now().format(DATE_TIME_FORMATTER));
-            
-            alarmRecordMapper.insert(alarmRecord);
-            
-            alarmWebSocketHandler.sendAlarmNotification(sensorData.getDeviceId(), alarmRecord);
-            alarmWebSocketHandler.broadcastAlarm(alarmRecord);
-            
-        } catch (Exception e) {
-            System.err.println("创建报警记录失败: " + e.getMessage());
-        }
-    }
-
     public void deleteSensorData(Long id) {
         sensorDataMapper.delete(id);
     }
@@ -292,10 +301,128 @@ public class SensorDataService {
     }
 
     public SensorData getLatestSensorData(String deviceId) {
-        return sensorDataMapper.getLatestByDeviceId(deviceId);
+        if (deviceId == null) {
+            return null;
+        }
+        SensorData cached = latestByDevice.get(deviceId);
+        if (cached != null) {
+            return cached;
+        }
+        SensorData fromDb = sensorDataMapper.getLatestByDeviceId(deviceId);
+        if (fromDb != null) {
+            latestByDevice.put(deviceId, fromDb);
+        }
+        return fromDb;
     }
 
     public List<SensorData> getTrajectory(String deviceId, Integer hours) {
         return sensorDataMapper.getTrajectory(deviceId, hours);
+    }
+
+    public List<SensorData> getTrajectoryByTimeRange(String deviceId, String startTime, String endTime) {
+        return sensorDataMapper.getTrajectoryByTimeRange(deviceId, startTime, endTime);
+    }
+
+    public List<Map<String, Object>> getTrajectoryPoints(String deviceId, String startTime, String endTime) {
+        List<SensorData> points = resolveTrajectory(deviceId, startTime, endTime);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (SensorData point : points) {
+            if (point.getLatitude() == null || point.getLongitude() == null) {
+                continue;
+            }
+            Map<String, Object> item = new HashMap<>();
+            item.put("latitude", point.getLatitude());
+            item.put("longitude", point.getLongitude());
+            item.put("time", point.getDataTime() != null ? point.getDataTime() : point.getCreateTime());
+            result.add(item);
+        }
+        return result;
+    }
+
+    public Map<String, Object> getTrajectoryStatistics(String deviceId, String startTime, String endTime) {
+        List<SensorData> points = resolveTrajectory(deviceId, startTime, endTime);
+        double totalDistance = 0;
+        long totalDuration = 0;
+        if (points.size() >= 2) {
+            for (int i = 1; i < points.size(); i++) {
+                SensorData prev = points.get(i - 1);
+                SensorData curr = points.get(i);
+                if (prev.getLatitude() != null && prev.getLongitude() != null
+                        && curr.getLatitude() != null && curr.getLongitude() != null) {
+                    totalDistance += GeoUtils.haversineMeters(
+                            prev.getLatitude(), prev.getLongitude(),
+                            curr.getLatitude(), curr.getLongitude());
+                }
+            }
+            // 无精确时间戳间隔时，按约 30 秒/点粗算时长（演示统计用）
+            totalDuration = points.size() * 30L;
+        }
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalDistance", Math.round(totalDistance));
+        stats.put("duration", totalDuration);
+        stats.put("avgSpeed", totalDuration > 0 ? Math.round(totalDistance / totalDuration * 36) / 10.0 : 0);
+        stats.put("pointCount", points.size());
+        return stats;
+    }
+
+    public Map<String, Object> simulateMovement(String deviceId, double startLat, double startLng, int points) {
+        int count = Math.max(1, Math.min(points, 200));
+        Random random = new Random();
+        double lat = startLat;
+        double lng = startLng;
+        LocalDateTime time = LocalDateTime.now().minusMinutes(count);
+        List<Map<String, Object>> trajectory = new ArrayList<>();
+
+        for (int i = 0; i < count; i++) {
+            lat += (random.nextDouble() - 0.3) * 0.0003;
+            lng += (random.nextDouble() - 0.3) * 0.0003;
+
+            SensorData data = new SensorData();
+            data.setDeviceId(deviceId);
+            data.setLatitude(lat);
+            data.setLongitude(lng);
+            data.setObstacleDistance(50 + random.nextDouble() * 200);
+            data.setIsFall(false);
+            data.setAccelX(random.nextDouble() * 2 - 1);
+            data.setAccelY(random.nextDouble() * 2 - 1);
+            data.setAccelZ(9.8 + random.nextDouble() * 0.5);
+            data.setFallConfidence(random.nextDouble() * 0.1);
+            data.setTemperature(20 + random.nextDouble() * 5);
+            data.setHumidity(40 + random.nextDouble() * 20);
+            data.setDataTime(time.format(DATE_TIME_FORMATTER));
+            sensorDataMapper.insert(data);
+
+            Map<String, Object> point = new HashMap<>();
+            point.put("latitude", lat);
+            point.put("longitude", lng);
+            point.put("time", time.format(DATE_TIME_FORMATTER));
+            trajectory.add(point);
+            time = time.plusMinutes(1);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("count", count);
+        result.put("trajectory", trajectory);
+        log.info("sensor.simulate deviceId={} points={}", deviceId, count);
+        return result;
+    }
+
+    private List<SensorData> resolveTrajectory(String deviceId, String startTime, String endTime) {
+        if (startTime != null && endTime != null) {
+            return sensorDataMapper.getTrajectoryByTimeRange(deviceId, startTime, endTime);
+        }
+        return sensorDataMapper.getTrajectory(deviceId, 24);
+    }
+
+    private static final class StationaryTracker {
+        private final double lat;
+        private final double lng;
+        private final LocalDateTime since;
+
+        private StationaryTracker(double lat, double lng, LocalDateTime since) {
+            this.lat = lat;
+            this.lng = lng;
+            this.since = since;
+        }
     }
 }

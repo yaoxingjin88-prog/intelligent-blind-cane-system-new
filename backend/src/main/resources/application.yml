@@ -1,0 +1,110 @@
+# =============================================================================
+# 公共配置（所有 profile 共用；dev / prod 可覆盖）
+# 敏感项优先环境变量，其次 application-local.yml（勿提交仓库）
+# =============================================================================
+
+spring:
+  profiles:
+    # 默认开发；生产设 SPRING_PROFILES_ACTIVE=prod
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  config:
+    # 兼容工作目录为 backend/ 或仓库根目录
+    import: optional:file:./application-local.yml,optional:file:./backend/application-local.yml,optional:classpath:application-local.yml
+  datasource:
+    # JDBC；库名 smart_cane，时区上海
+    url: ${DB_URL:jdbc:mysql://localhost:3306/smart_cane?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_0900_ai_ci&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:smart_cane}
+    # 密码请写在 application-local.yml，不要写在这里
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 连接池：最大连接 / 最小空闲 / 获取超时(ms)
+      maximum-pool-size: 15
+      minimum-idle: 3
+      connection-timeout: 10000
+  servlet:
+    multipart:
+      # 语音上传等（ASR）
+      max-file-size: 10MB
+      max-request-size: 10MB
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+server:
+  port: ${SERVER_PORT:8081}
+  # 监听所有网卡，便于局域网/容器访问
+  address: 0.0.0.0
+  tomcat:
+    uri-encoding: UTF-8
+    threads:
+      max: 80
+    accept-count: 200
+
+mybatis:
+  # 实体别名包，Mapper 返回类型可写短类名
+  type-aliases-package: com.ruoyi.entity
+
+# ---------- 业务安全 / 限流 / 数据裁剪 ----------
+app:
+  security:
+    # 是否启用 JWT 鉴权；本地联调可 AUTH_ENABLED=false
+    auth-enabled: ${AUTH_ENABLED:true}
+    # 是否允许测试短信验证码 123456（生产必须 false）
+    allow-test-sms-code: ${ALLOW_TEST_SMS:false}
+    # CORS / WebSocket 允许源（支持 pattern，如 http://localhost:*）
+    allowed-origins: ${CORS_ORIGINS:https://intelligent.shinegoldyao.store,http://localhost:*,http://127.0.0.1:*}
+    admin-username: ${ADMIN_USERNAME:admin}
+    # 可为明文或 BCrypt（$2a$...）；生产勿用默认值
+    admin-password: ${ADMIN_PASSWORD:123456}
+    # JWT 签名密钥，生产长度建议 ≥32
+    jwt-secret: ${JWT_SECRET:please-change-this-jwt-secret-key-32b}
+    # 令牌有效期（毫秒），默认 24h
+    jwt-expiration-ms: 86400000
+    # 硬件 POST /api/sensor-data 请求头 X-Device-Key；空=不校验（仅建议本地）
+    device-api-key: ${DEVICE_API_KEY:}
+  rate-limit:
+    # AI 接口每分钟限流次数
+    ai-per-minute: ${RATE_LIMIT_AI:20}
+    # 传感器上报每分钟限流次数
+    sensor-per-minute: ${RATE_LIMIT_SENSOR:120}
+  prune:
+    # 定时裁剪历史传感器/报警数据
+    enabled: ${PRUNE_ENABLED:true}
+    # 每天 03:15 执行
+    cron: "0 15 3 * * ?"
+    # 每设备保留最近 N 条传感器
+    sensor-keep-per-device: ${PRUNE_SENSOR_KEEP:50}
+    # 每设备保留最近 N 条报警
+    alarm-keep-per-device: ${PRUNE_ALARM_KEEP:20}
+
+# ---------- 高德地图（逆地理等） ----------
+amap:
+  web-key: ${AMAP_WEB_KEY:}
+  base-url: https://restapi.amap.com
+  timeout-seconds: 8
+
+# ---------- 演示定位（小程序无真实 GPS 时） ----------
+demo:
+  location:
+    force: ${DEMO_LOCATION_FORCE:false}
+    latitude: 36.321143
+    longitude: 120.397571
+
+# ---------- 第三方 AI / 语音 ----------
+ai:
+  deepseek:
+    api-key: ${DEEPSEEK_API_KEY:}
+    base-url: https://api.deepseek.com
+    model: deepseek-chat
+    timeout-seconds: 30
+  baidu:
+    # 百度智能云语音：ASR + TTS
+    api-key: ${BAIDU_API_KEY:}
+    secret-key: ${BAIDU_SECRET_KEY:}
+    tts-voice: 0
+    tts-speed: 5
+    tts-pitch: 5
+    tts-volume: 5
+    timeout-seconds: 60

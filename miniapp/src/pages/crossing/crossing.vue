@@ -6,7 +6,7 @@
         <view class="hero-glow hero-glow-right"></view>
         <view class="hero-top">
           <view class="hero-copy">
-            <text class="hero-kicker">Crossing Assist</text>
+            <text class="hero-kicker">过马路辅助</text>
             <text class="hero-title">路口安全通行辅助</text>
             <text class="hero-subtitle">接收视觉模块识别结果，进行语音与震动提醒</text>
           </view>

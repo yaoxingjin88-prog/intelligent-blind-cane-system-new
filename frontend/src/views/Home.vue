@@ -206,6 +206,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { User, Monitor, Bell, DataAnalysis, Plus, VideoCamera, Cpu, Document } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
+import { apiFetch } from '../utils/http'
 
 export default {
   name: 'Home',
@@ -256,178 +257,114 @@ export default {
 
     const fetchStats = async () => {
       try {
-        // 调用后端API获取真实数据
-        console.log('开始获取统计数据')
-        
-        // 分别请求各个API，避免一个失败影响其他
         let usersData = { data: [] }
         let devicesData = { data: [] }
         let alarmsData = { data: [] }
         let sensorDataData = { data: [] }
-        
+
         try {
-          const usersResponse = await fetch('/api/users')
-          console.log('用户API响应状态:', usersResponse.status)
+          const usersResponse = await apiFetch('/api/users')
           usersData = await usersResponse.json()
-          console.log('用户数据:', usersData)
         } catch (error) {
           console.error('获取用户数据失败:', error)
         }
-        
+
         try {
-          const devicesResponse = await fetch('/api/devices')
-          console.log('设备API响应状态:', devicesResponse.status)
+          const devicesResponse = await apiFetch('/api/devices')
           devicesData = await devicesResponse.json()
-          console.log('设备数据:', devicesData)
         } catch (error) {
           console.error('获取设备数据失败:', error)
         }
-        
+
         try {
-          const alarmsResponse = await fetch('/api/alarm-records')
-          console.log('告警API响应状态:', alarmsResponse.status)
+          const alarmsResponse = await apiFetch('/api/alarm-records')
           alarmsData = await alarmsResponse.json()
-          console.log('告警数据:', alarmsData)
         } catch (error) {
           console.error('获取告警数据失败:', error)
         }
-        
+
         try {
-          const sensorDataResponse = await fetch('/api/sensor-data')
-          console.log('传感器数据API响应状态:', sensorDataResponse.status)
+          const sensorDataResponse = await apiFetch('/api/sensor-data')
           sensorDataData = await sensorDataResponse.json()
-          console.log('传感器数据:', sensorDataData)
         } catch (error) {
           console.error('获取传感器数据失败:', error)
         }
-        
+
         userCount.value = usersData.data ? usersData.data.length : 0
         deviceCount.value = devicesData.data ? devicesData.data.length : 0
         alarmCount.value = alarmsData.data ? alarmsData.data.length : 0
         sensorDataCount.value = sensorDataData.data ? sensorDataData.data.length : 0
-        
-        // 获取最近告警记录（最多5条）
+
         if (alarmsData.data) {
           recentAlarms.value = alarmsData.data
             .sort((a, b) => new Date(b.alarmTime) - new Date(a.alarmTime))
             .slice(0, 5)
+        } else {
+          recentAlarms.value = []
         }
-        
-        // 获取最新设备数据（最多5条）
+
         if (sensorDataData.data) {
           latestDeviceData.value = sensorDataData.data
             .sort((a, b) => new Date(b.dataTime || b.createdAt) - new Date(a.dataTime || a.createdAt))
             .slice(0, 5)
+        } else {
+          latestDeviceData.value = []
         }
-        
-        // 计算在线设备数
+
         if (devicesData.data) {
           onlineDevices.value = devicesData.data.filter(d => d.status === '在线' || d.status === 'active' || d.status === 'ACTIVE').length
+        } else {
+          onlineDevices.value = 0
         }
-        
-        console.log('统计数据:', userCount.value, deviceCount.value, alarmCount.value, sensorDataCount.value)
-        console.log('最近告警记录:', recentAlarms.value)
-        console.log('最新设备数据:', latestDeviceData.value)
-        console.log('在线设备数:', onlineDevices.value)
-        
-        // 处理图表数据
+
         processChartData(devicesData.data, alarmsData.data, sensorDataData.data)
-        
-        // 更新图表
         updateCharts()
       } catch (error) {
         console.error('获取统计数据失败:', error)
-        // 出错时使用默认值
         userCount.value = 0
         deviceCount.value = 0
         alarmCount.value = 0
         sensorDataCount.value = 0
-        
-        // 使用模拟数据
-        useMockData()
+        recentAlarms.value = []
+        latestDeviceData.value = []
+        onlineDevices.value = 0
+        chartData.value = {
+          deviceStatus: { active: 0, offline: 0 },
+          alarmTypes: { obstacle: 0, fall: 0, battery: 0 },
+          sensorData: []
+        }
         updateCharts()
       }
     }
-    
-    // 处理图表数据
+
     const processChartData = (devices, alarms, sensorData) => {
-      console.log('处理图表数据:', devices, alarms, sensorData)
-      
-      // 设备状态统计
       if (devices) {
-        console.log('设备数据长度:', devices.length)
-        console.log('设备状态:', devices.map(d => d.status))
         chartData.value.deviceStatus.active = devices.filter(d => d.status === '在线' || d.status === 'active' || d.status === 'ACTIVE').length
         chartData.value.deviceStatus.offline = devices.filter(d => d.status === '离线' || d.status === 'offline' || d.status === 'OFFLINE').length
-        console.log('设备状态统计:', chartData.value.deviceStatus)
       }
-      
-      // 告警类型统计
+
       if (alarms) {
-        console.log('告警数据长度:', alarms.length)
-        console.log('告警类型:', alarms.map(a => a.alarmType))
         chartData.value.alarmTypes.obstacle = alarms.filter(a => a.alarmType === '障碍物' || a.alarmType === 'obstacle' || a.alarmType === 'OBSTACLE').length
-        chartData.value.alarmTypes.fall = alarms.filter(a => a.alarmType === '摔倒' || a.alarmType === 'fall' || a.alarmType === 'FALL').length
-        chartData.value.alarmTypes.battery = alarms.filter(a => a.alarmType === '电池' || a.alarmType === 'battery' || a.alarmType === 'BATTERY').length
-        console.log('告警类型统计:', chartData.value.alarmTypes)
+        chartData.value.alarmTypes.fall = alarms.filter(a => a.alarmType === '摔倒' || a.alarmType === 'fall' || a.alarmType === 'FALL' || (a.alarmType && a.alarmType.includes('摔'))).length
+        chartData.value.alarmTypes.battery = alarms.filter(a => a.alarmType === '电池' || a.alarmType === 'battery' || a.alarmType === 'BATTERY' || (a.alarmType && a.alarmType.includes('电'))).length
       }
-      
-      // 传感器数据趋势
+
       if (sensorData && sensorData.length > 0) {
-        console.log('传感器数据长度:', sensorData.length)
         chartData.value.sensorData = sensorData.slice(-20).map(item => ({
-          time: item.dataTime || item.createdAt || new Date().toLocaleTimeString(),
-          distance: item.obstacleDistance || Math.floor(Math.random() * 1000) / 10
+          time: item.dataTime || item.createdAt || '',
+          distance: item.obstacleDistance != null ? item.obstacleDistance : 0
         }))
       } else {
-        // 确保即使没有数据也有默认值
-        chartData.value.sensorData = Array.from({ length: 20 }, (_, i) => ({
-          time: new Date(Date.now() - (19 - i) * 60000).toLocaleTimeString(),
-          distance: Math.floor(Math.random() * 1000) / 10
-        }))
+        chartData.value.sensorData = []
       }
     }
-    
-    // 使用模拟数据
-    const useMockData = () => {
-      chartData.value.deviceStatus = { active: 12, offline: 3 }
-      chartData.value.alarmTypes = { obstacle: 8, fall: 3, battery: 4 }
-      chartData.value.sensorData = Array.from({ length: 20 }, (_, i) => ({
-        time: new Date(Date.now() - (19 - i) * 60000).toLocaleTimeString(),
-        distance: Math.floor(Math.random() * 1000) / 10
-      }))
-      
-      // 模拟最近告警记录
-      recentAlarms.value = [
-        { id: 1, deviceId: 'DEVICE001', alarmType: '摔倒', alarmTime: new Date().toISOString(), status: '已处理' },
-        { id: 2, deviceId: 'DEVICE002', alarmType: '障碍物', alarmTime: new Date(Date.now() - 3600000).toISOString(), status: '未处理' },
-        { id: 3, deviceId: 'DEVICE003', alarmType: '电池', alarmTime: new Date(Date.now() - 7200000).toISOString(), status: '已处理' },
-        { id: 4, deviceId: 'DEVICE001', alarmType: '摔倒', alarmTime: new Date(Date.now() - 10800000).toISOString(), status: '已处理' },
-        { id: 5, deviceId: 'DEVICE002', alarmType: '障碍物', alarmTime: new Date(Date.now() - 14400000).toISOString(), status: '未处理' }
-      ]
-      
-      // 模拟最新设备数据
-      latestDeviceData.value = [
-        { id: 1, deviceId: 'DEVICE001', obstacleDistance: 125.5, isFall: false, temperature: 25.5, humidity: 45, dataTime: new Date().toISOString() },
-        { id: 2, deviceId: 'DEVICE002', obstacleDistance: 85.2, isFall: false, temperature: 24.8, humidity: 48, dataTime: new Date(Date.now() - 60000).toISOString() },
-        { id: 3, deviceId: 'DEVICE003', obstacleDistance: 250.0, isFall: false, temperature: 26.2, humidity: 42, dataTime: new Date(Date.now() - 120000).toISOString() },
-        { id: 4, deviceId: 'DEVICE001', obstacleDistance: 95.8, isFall: false, temperature: 25.0, humidity: 46, dataTime: new Date(Date.now() - 180000).toISOString() },
-        { id: 5, deviceId: 'DEVICE002', obstacleDistance: 150.3, isFall: false, temperature: 24.5, humidity: 49, dataTime: new Date(Date.now() - 240000).toISOString() }
-      ]
-      
-      // 模拟在线设备数
-      onlineDevices.value = 12
-    }
-    
-    // 跳转到告警记录页面
+
     const goToAlarms = () => {
       router.push('/alarm-records')
     }
-    
-    // 处理告警
-    const handleAlarm = (alarm) => {
-      console.log('处理告警:', alarm)
-      // 这里可以添加处理告警的逻辑
+
+    const handleAlarm = () => {
+      router.push('/alarm-records')
     }
     
     // 跳转到添加用户页面
@@ -457,23 +394,16 @@ export default {
       router.push('/login')
     }
     
-    // 初始化图表
     const initCharts = () => {
-      console.log('初始化图表:', deviceStatusChart.value, alarmTypeChart.value, sensorDataChart.value)
-      
       if (deviceStatusChart.value) {
         deviceStatusChartInstance = echarts.init(deviceStatusChart.value)
-        console.log('设备状态图表初始化成功')
       }
       if (alarmTypeChart.value) {
         alarmTypeChartInstance = echarts.init(alarmTypeChart.value)
-        console.log('告警类型图表初始化成功')
       }
       if (sensorDataChart.value) {
         sensorDataChartInstance = echarts.init(sensorDataChart.value)
-        console.log('传感器数据图表初始化成功')
       }
-      
       updateCharts()
     }
     
@@ -532,7 +462,7 @@ export default {
               animationType: 'scale',
               animationEasing: 'elasticOut',
               animationDelay: function (idx) {
-                return Math.random() * 200;
+                return idx * 80;
               },
               data: [
                 { value: chartData.value.deviceStatus.active, name: '在线', itemStyle: { color: '#3b82f6' } },
@@ -596,7 +526,7 @@ export default {
               animationType: 'scale',
               animationEasing: 'elasticOut',
               animationDelay: function (idx) {
-                return Math.random() * 200;
+                return idx * 80;
               },
               data: [
                 { value: chartData.value.alarmTypes.obstacle, name: '障碍物', itemStyle: { color: '#409eff' } },

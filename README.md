@@ -28,17 +28,17 @@ intelligent-blind-cane-system/
 │   ├── src/
 │   │   ├── views/              # 页面组件
 │   │   ├── components/         # 公共组件
-│   │   ├── api/                # API 接口封装
-│   │   ├── router/             # 路由配置
-│   │   └── stores/             # Pinia 状态管理
+│   │   ├── utils/              # HTTP 封装（http.js / request.ts）
+│   │   └── router/             # 路由配置
 │   └── package.json
 ├── miniapp/                    # 小程序端 (Uni-app)
 │   ├── src/
 │   │   ├── pages/              # 页面
 │   │   ├── api/                # API 接口
-│   │   ├── stores/             # 状态管理
+│   │   ├── store/              # Pinia 状态
+│   │   ├── config/             # 环境配置（BASE_URL 等）
 │   │   └── utils/              # 工具函数
-│   └── manifest.json
+│   └── package.json
 ├── database/                   # 数据库脚本
 │   └── mysql/
 │       └── smart_cane.sql      # 完整数据库脚本
@@ -142,7 +142,6 @@ python crossing_assist_demo.py --api-base http://127.0.0.1:8081/api --device-id 
 | TypeScript | 5.0.0 | 类型支持 |
 | Axios | 1.15.0 | HTTP客户端 |
 | Vue Router | 5.0.4 | 路由管理 |
-| Pinia | 2.1.0 | 状态管理 |
 
 ### 小程序
 | 技术 | 用途 |
@@ -262,11 +261,11 @@ python crossing_assist_demo.py --api-base http://127.0.0.1:8081/api --device-id 
 └────────┬───────────────────────────────────────────────┘
          │
 ┌────────┴───────────────────────────────────────────────┐
-│                    数据存储层                             │
-├──────────────┬──────────────┬──────────────┬───────────┤
-│   MySQL      │    Redis      │   文件存储    │  日志存储  │
-│   (持久化)   │   (缓存)      │   (OSS/本地)  │  (ELK)    │
-└──────────────┴──────────────┴──────────────┴───────────┘
+│                    数据存储层（当前）                      │
+├────────────────────────────┬───────────────────────────┤
+│   MySQL（持久化）            │   本地日志（logback）       │
+└────────────────────────────┴───────────────────────────┘
+  规划中：Redis 缓存 / 对象存储 / 集中式日志（按部署需要引入）
 ```
 
 ## 核心算法
@@ -363,19 +362,19 @@ cp .env.example .env
 ```
 
 主要配置项：
-- 数据库连接信息
-- Redis配置
-- JWT密钥
-- 小程序AppID
-- 高德地图API密钥
-- 百度语音API密钥
-- AI大模型API密钥
+- 数据库连接（`DB_*` / `application-local.yml`）
+- JWT 密钥、管理员密码（支持明文或 BCrypt）
+- `DEVICE_API_KEY`：硬件上报 `POST /api/sensor-data` 时请求头 `X-Device-Key`（生产必填）
+- 高德 / DeepSeek / 百度语音等第三方 Key
+- Redis：规划中，当前未接入
+
+后端环境变量示例见 `backend/application-example.env`。
 
 ## 演示账号
 
 | 角色 | 账号 | 密码 |
 |------|------|------|
-| 管理员 | admin | 123456 |
+| 管理员 | admin | 123456（仅开发默认；生产请改密或改用 BCrypt） |
 
 ## 贡献指南
 

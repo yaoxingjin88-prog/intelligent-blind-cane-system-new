@@ -168,7 +168,7 @@ import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRoute } from 'vue-router'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { fetchJson } from '../utils/http'
+import { fetchJson, apiFetch } from '../utils/http'
 
 export default {
   name: 'Users',
@@ -291,7 +291,7 @@ export default {
         userId,
         batteryLevel: parseInt(device.batteryLevel)
       }
-      const response = await fetch('/api/devices', {
+      const response = await apiFetch('/api/devices', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -316,7 +316,7 @@ export default {
     }
 
     const findCreatedUserId = async (username) => {
-      const response = await fetch('/api/users', {
+      const response = await apiFetch('/api/users', {
         cache: 'no-cache'
       })
       const data = await response.json()
@@ -373,15 +373,12 @@ export default {
     }
     
     const addUser = async () => {
-      console.log('开始添加用户')
       if (addUserFormRef.value) {
         const valid = await addUserFormRef.value.validate()
         if (valid) {
           try {
-            // 调用后端API添加用户
-            console.log('添加用户数据:', addUserForm.value)
             const selectedDeviceIds = [...addUserForm.value.selectedDeviceIds]
-            const response = await fetch('/api/users', {
+            const response = await apiFetch('/api/users', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json'
@@ -396,7 +393,6 @@ export default {
               })
             })
             const data = await response.json()
-            console.log('添加用户响应:', data)
             if (data.code === 200) {
               if (selectedDeviceIds.length) {
                 const createdUserId = await findCreatedUserId(addUserForm.value.username)
@@ -406,7 +402,6 @@ export default {
               }
               ElMessage.success('添加用户成功')
               addDialogVisible.value = false
-              console.log('添加用户成功，开始刷新用户列表')
               fetchUsers()
             } else {
               ElMessage.error('添加用户失败: ' + data.msg)
@@ -436,7 +431,7 @@ export default {
               address: editUserForm.value.address
             }
             // 调用后端API更新用户
-            const response = await fetch('/api/users', {
+            const response = await apiFetch('/api/users', {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json'
@@ -468,7 +463,7 @@ export default {
       }).then(async () => {
         try {
           // 调用后端API删除用户
-          const response = await fetch(`/api/users/${id}`, {
+          const response = await apiFetch(`/api/users/${id}`, {
             method: 'DELETE'
           })
           const data = await response.json()

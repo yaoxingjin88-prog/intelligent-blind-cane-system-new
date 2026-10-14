@@ -3,7 +3,7 @@
     <!-- 顶部：自动朗读开关 + 连续对话入口 -->
     <view class="top-bar">
       <view class="top-bar-copy">
-        <text class="top-kicker">Mingyan AI</text>
+        <text class="top-kicker">智能助手</text>
         <text class="top-title">明眼助手</text>
         <text class="top-subtitle">支持语音问答、连续对话与自动朗读，让获取信息更自然。</text>
       </view>
@@ -257,9 +257,7 @@ onUnmounted(() => {
 const initRecorder = () => {
   recorderManager = uni.getRecorderManager()
 
-  recorderManager.onStart(() => {
-    console.log('开始录音')
-  })
+  recorderManager.onStart(() => {})
 
   recorderManager.onStop((res) => {
     recording.value = false

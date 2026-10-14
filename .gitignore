@@ -40,6 +40,14 @@ logs/
 .env
 .env.local
 .env.*.local
+backend/application-local.properties
+backend/**/application-local.properties
+backend/application-local.yml
+backend/**/application-local.yml
+backend/application-local.env
+**/application-secret.properties
+**/application-secret.yml
+
 
 # 数据库
 *.sql.backup

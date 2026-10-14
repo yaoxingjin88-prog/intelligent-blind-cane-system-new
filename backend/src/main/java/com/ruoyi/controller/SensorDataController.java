@@ -1,73 +1,115 @@
 package com.ruoyi.controller;
 
+import lombok.RequiredArgsConstructor;
 import com.ruoyi.entity.Result;
 import com.ruoyi.entity.SensorData;
 import com.ruoyi.service.SensorDataService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * 传感器数据接口控制器（管理端查询 + 硬件上报）
+ */
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/sensor-data")
 @Tag(name = "传感器数据管理", description = "传感器数据相关接口")
 public class SensorDataController {
 
-    @Autowired
-    private SensorDataService sensorDataService;
+    private final SensorDataService sensorDataService;
 
-    @Operation(summary = "获取所有传感器数据", description = "默认返回最近若干条，避免全表拉取拖垮服务")
+    /**
+     * 分页/限量查询传感数据 GET /api/sensor-data
+     *
+     * @param limit 条数上限，默认 200
+     * @param all   true 时按最大 1000 条返回（禁止无界全表）
+     * @return 统一返回结果
+     */
+    @Operation(summary = "获取传感器数据")
     @GetMapping
     public Result<List<SensorData>> getAllSensorData(
             @RequestParam(required = false, defaultValue = "200") Integer limit,
             @RequestParam(required = false, defaultValue = "false") Boolean all) {
         if (Boolean.TRUE.equals(all)) {
-            return Result.success(sensorDataService.getAllSensorData());
+            return Result.success(sensorDataService.getRecentSensorData(1000));
         }
         return Result.success(sensorDataService.getRecentSensorData(limit));
     }
 
-    @Operation(summary = "获取传感器数据总数", description = "获取系统当前传感器数据总条数")
+    /**
+     * 传感数据总数 GET /api/sensor-data/count
+     */
+    @Operation(summary = "获取传感器数据总数")
     @GetMapping("/count")
     public Result<Integer> getSensorDataCount() {
         return Result.success(sensorDataService.countAllSensorData());
     }
 
-    @Operation(summary = "根据ID获取传感器数据", description = "根据传感器数据ID获取传感器数据的详细信息")
+    /**
+     * 按主键查询 GET /api/sensor-data/{id}
+     */
+    @Operation(summary = "根据ID获取传感器数据")
     @GetMapping("/{id}")
     public Result<SensorData> getSensorDataById(@PathVariable Long id) {
         return Result.success(sensorDataService.getSensorDataById(id));
     }
 
-    @Operation(summary = "添加传感器数据", description = "添加新的传感器数据")
+    /**
+     * 硬件上报传感数据 POST /api/sensor-data
+     * （鉴权见 JwtInterceptor：可配置 X-Device-Key）
+     *
+     * @param sensorData 上报体
+     * @return 统一返回结果
+     */
+    @Operation(summary = "添加传感器数据")
     @PostMapping
     public Result addSensorData(@RequestBody SensorData sensorData) {
+        // 调用业务层：入库 + 跌倒/围栏联动
         sensorDataService.addSensorData(sensorData);
         return Result.success();
     }
 
-    @Operation(summary = "删除传感器数据", description = "根据传感器数据ID删除传感器数据")
+    /**
+     * 删除单条传感数据 DELETE /api/sensor-data/{id}
+     */
+    @Operation(summary = "删除传感器数据")
     @DeleteMapping("/{id}")
     public Result deleteSensorData(@PathVariable Long id) {
         sensorDataService.deleteSensorData(id);
         return Result.success();
     }
 
-    @Operation(summary = "裁剪历史传感器数据", description = "按设备仅保留最近N条传感器数据")
+    /**
+     * 按设备裁剪历史 DELETE /api/sensor-data/prune
+     *
+     * @param keepPerDevice 每设备保留最近 N 条
+     * @return 删除条数
+     */
+    @Operation(summary = "裁剪历史传感器数据")
     @DeleteMapping("/prune")
     public Result<Integer> pruneSensorData(@RequestParam(defaultValue = "50") Integer keepPerDevice) {
         return Result.success(sensorDataService.pruneOldSensorData(keepPerDevice));
     }
 
-    @Operation(summary = "获取设备最新传感器数据", description = "根据设备ID获取最新的传感器数据")
+    /**
+     * 设备最新一条 GET /api/sensor-data/latest
+     */
+    @Operation(summary = "获取设备最新传感器数据")
     @GetMapping("/latest")
     public Result<SensorData> getLatestSensorData(@RequestParam String deviceId) {
         return Result.success(sensorDataService.getLatestSensorData(deviceId));
     }
 
-    @Operation(summary = "获取设备轨迹数据", description = "根据设备ID和时间范围获取轨迹数据")
+    /**
+     * 设备轨迹 GET /api/sensor-data/trajectory
+     *
+     * @param deviceId 设备编号
+     * @param hours    最近小时数，默认 1
+     */
+    @Operation(summary = "获取设备轨迹数据")
     @GetMapping("/trajectory")
     public Result<List<SensorData>> getTrajectory(
             @RequestParam String deviceId,

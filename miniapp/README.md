@@ -8,60 +8,29 @@
 - **UI组件库**: uView Plus
 - **状态管理**: Pinia
 - **地图服务**: 微信小程序地图组件 / 高德地图
-- **图表库**: ECharts for WeChat Mini Program
-
 ## 项目结构
 
 ```
-mini/
-├── api/                      # API接口
+miniapp/src/
+├── api/                      # API 接口
 │   ├── index.js             # 请求封装
-│   ├── auth.js              # 认证接口
-│   ├── device.js            # 设备接口
-│   ├── alarm.js             # 报警接口
-│   ├── fence.js             # 围栏接口
-│   ├── trajectory.js        # 轨迹接口
-│   ├── statistics.js        # 统计接口
-│   └── message.js           # 消息接口
-├── pages/                   # 页面
-│   ├── login/               # 登录页
-│   ├── home/                # 首页（实时监控）
-│   ├── alarm/               # 报警管理
-│   ├── fence/               # 电子围栏 & 轨迹
-│   ├── profile/             # 个人中心
-│   ├── device/              # 设备管理
-│   └── subpages/            # 子页面
-│       ├── elder-info/      # 老人信息管理
-│       ├── dnd-settings/    # 免打扰设置
-│       ├── system-settings/ # 系统设置
-│       ├── privacy-policy/  # 隐私政策
-│       └── about-us/        # 关于我们
-├── store/                   # 状态管理
-│   ├── index.js             # 用户状态
-│   ├── device.js            # 设备状态
-│   ├── alarm.js             # 报警状态
-│   ├── elder.js             # 老人信息状态
-│   └── settings.js          # 设置状态
-├── utils/                   # 工具函数
-│   ├── index.js             # 通用工具
-│   └── map.js               # 地图工具
-├── static/                  # 静态资源
-│   ├── images/              # 图片资源
-│   └── tabbar/              # 底部导航图标
-├── App.vue                  # 应用入口
-├── main.js                  # 主入口文件
-├── manifest.json            # 应用配置
-├── pages.json               # 页面配置
-└── package.json             # 依赖配置
+│   ├── auth.js / device.js / alarm.js / fence.js / trajectory.js ...
+├── pages/                   # 页面（login / home / alarm / fence / profile / device / ai-chat 等）
+├── store/                   # Pinia 状态
+├── config/env.js            # BASE_URL / WS_URL（换 IP 用仓库根目录 update-ip.ps1）
+├── utils/
+├── App.vue
+├── main.js
+├── pages.json
+└── manifest.json
 ```
 
 ## 功能模块
 
 ### 1. 用户认证
-- 手机号登录
-- 微信授权登录
-- 用户注册
-- 实名认证
+- 手机号 + 验证码登录（开发环境可用测试码）
+- 监护人注册
+- 微信登录接口预留（当前返回 501，未接开放平台）
 
 ### 2. 设备管理
 - 设备绑定（扫码/手动输入）
@@ -149,10 +118,11 @@ npm run build:h5        # 构建H5
 
 ### 后端API地址
 
-修改 `api/index.js` 中的 `BASE_URL`：
+修改 `src/config/env.js` 中的 `BASE_URL` / `WS_URL`（或运行仓库根目录 `update-ip.ps1`）：
 
 ```javascript
-const BASE_URL = 'http://localhost:8081/api'
+export const BASE_URL = 'http://127.0.0.1:8081/api'
+export const WS_URL = 'ws://127.0.0.1:8081/ws/alarm'
 ```
 
 ### 微信小程序配置
@@ -200,8 +170,8 @@ const BASE_URL = 'http://localhost:8081/api'
 1. **权限申请**: 微信小程序需要申请位置权限，在 `manifest.json` 中配置
 2. **地图服务**: 使用微信地图组件，需要配置相关权限
 3. **Token管理**: Token 存储在本地，过期后自动跳转登录
-4. **数据持久化**: 使用 Pinia 持久化插件，重要数据自动保存
-5. **WebSocket**: 实时报警推送需要后端支持 WebSocket
+4. **本地缓存**: 关键状态用 `uni.setStorageSync`；Pinia store 本身不带持久化插件
+5. **WebSocket**: `App.vue` 已对接后端 `/ws/alarm`，登录并绑定设备后自动连接
 
 ## 开发规范
 

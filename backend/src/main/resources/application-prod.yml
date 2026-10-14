@@ -1,0 +1,47 @@
+# =============================================================================
+# 生产环境（profile=prod）
+# 启动：--spring.profiles.active=prod 或 SPRING_PROFILES_ACTIVE=prod
+# 密钥务必用环境变量 / application-local.yml（勿写入本文件、勿提交仓库）
+# ProdSecurityValidator 会校验弱口令 / JWT / 设备密钥等
+# =============================================================================
+
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  datasource:
+    hikari:
+      # 生产连接池略大
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 10000
+
+app:
+  security:
+    auth-enabled: ${AUTH_ENABLED:true}
+    # 生产禁止测试短信码
+    allow-test-sms-code: false
+    # 仅放行正式前端域名（可用 CORS_ORIGINS 覆盖）
+    allowed-origins: ${CORS_ORIGINS:https://intelligent.shinegoldyao.store}
+    admin-username: ${ADMIN_USERNAME:admin}
+    # 生产必须通过环境变量覆盖；推荐 BCrypt 哈希
+    admin-password: ${ADMIN_PASSWORD}
+    # 生产必须配置，长度建议 ≥32
+    jwt-secret: ${JWT_SECRET}
+    jwt-expiration-ms: 86400000
+    # 硬件上报共享密钥，请求头 X-Device-Key
+    device-api-key: ${DEVICE_API_KEY}
+
+demo:
+  location:
+    # 生产关闭演示定位
+    force: false
+    latitude: 36.321143
+    longitude: 120.397571
+
+logging:
+  level:
+    # 生产收敛日志量
+    root: warn
+    com.ruoyi: info
+    org.springframework.web: warn

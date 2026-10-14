@@ -1,6 +1,37 @@
+/**
+ * 管理端推荐 HTTP 封装（fetch）。
+ * 需要 axios 风格调用时用 utils/request.ts（内部也走本文件）。
+ */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const isRetryableStatus = (status) => status === 502 || status === 503 || status === 504
+
+const authHeaders = () => {
+  const token = localStorage.getItem('token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+export function apiFetch(url, options = {}) {
+  const fullUrl = url.startsWith('http')
+    ? url
+    : `${import.meta.env.VITE_API_BASE_URL || ''}${url}`
+
+  return fetch(fullUrl, {
+    ...options,
+    headers: {
+      ...authHeaders(),
+      ...(options.headers || {})
+    }
+  }).then((response) => {
+    if (response.status === 401) {
+      localStorage.removeItem('token')
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+      }
+    }
+    return response
+  })
+}
 
 /**
  * 带重试的 JSON 请求；502/503/504 时自动重试，避免网关偶发错误导致页面空白
@@ -11,6 +42,7 @@ export async function fetchJson(url, options = {}) {
     retryDelay = 350,
     timeout = 25000,
     cache = 'no-cache',
+    headers,
     ...fetchOptions
   } = options
 
@@ -27,9 +59,23 @@ export async function fetchJson(url, options = {}) {
       const response = await fetch(fullUrl, {
         cache,
         ...fetchOptions,
+        headers: {
+          ...authHeaders(),
+          ...(headers || {})
+        },
         signal: fetchOptions.signal || controller.signal
       })
       const contentType = response.headers.get('content-type') || ''
+
+      if (response.status === 401) {
+        localStorage.removeItem('token')
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = '/login'
+        }
+        const error = new Error('HTTP 401: 未登录或令牌无效')
+        error.status = 401
+        throw error
+      }
 
       if (!response.ok) {
         const text = await response.text()
@@ -48,6 +94,9 @@ export async function fetchJson(url, options = {}) {
       lastError = error
       const status = error?.status
       const aborted = error?.name === 'AbortError'
+      if (status === 401) {
+        throw error
+      }
       if (attempt < retries && (isRetryableStatus(status) || !status || aborted)) {
         await sleep(retryDelay * (attempt + 1))
         continue

@@ -57,7 +57,8 @@ public class AiChatService {
             """;
 
     /**
-     * 一次性对话（非流式）
+     * 一次性对话（非流式，无业务上下文）
+     *
      * @param messages 用户历史消息 [{role:"user",content:"..."},{role:"assistant",content:"..."}]
      * @return AI 回复文字
      */
@@ -65,6 +66,13 @@ public class AiChatService {
         return chat(messages, null);
     }
 
+    /**
+     * 一次性对话（非流式）：拼 system/上下文后调 DeepSeek，解析回复正文
+     *
+     * @param messages 用户历史消息
+     * @param context  可选：监护人/用户/设备/最新传感，注入 system 侧提示
+     * @return AI 回复文字
+     */
     public String chat(List<Map<String, String>> messages, AiContext context) throws Exception {
         List<Map<String, String>> fullMessages = buildMessages(messages, context);
         Map<String, Object> body = new HashMap<>();

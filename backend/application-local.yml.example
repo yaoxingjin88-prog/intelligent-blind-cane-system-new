@@ -1,0 +1,29 @@
+# 复制为 application-local.yml（已 gitignore）
+# 放在 jar 同目录，或 backend/ 工作目录；也可放 classpath
+#
+# 开发：
+#   java -jar Excellent-1.0-SNAPSHOT.jar
+# 生产：
+#   java -jar Excellent-1.0-SNAPSHOT.jar --spring.profiles.active=prod
+
+spring:
+  datasource:
+    password: 请填写数据库密码
+
+amap:
+  web-key: 请填写高德Key
+
+ai:
+  deepseek:
+    api-key: 请填写DeepSeekKey
+  baidu:
+    api-key: 请填写百度APIKey
+    secret-key: 请填写百度SecretKey
+
+app:
+  security:
+    # 明文或 BCrypt 均可；生成 BCrypt 可用项目内 PasswordEncoder / 在线工具
+    admin-password: 请修改管理端密码
+    jwt-secret: 请换成至少32位随机字符串
+    # 硬件上报密钥；生产必填，设备请求头携带 X-Device-Key
+    device-api-key: 请填写设备上报密钥

@@ -19,12 +19,10 @@ const request = (options) => {
         ...options.header
       },
       success: (res) => {
-        console.log('请求成功:', res)
         if (res.statusCode === 200) {
           if (res.data.code === 200) {
             resolve(res.data)
           } else if (res.data.code === 401) {
-            // token过期，跳转登录
             uni.removeStorageSync('token')
             uni.removeStorageSync('userInfo')
             uni.reLaunch({
@@ -49,7 +47,7 @@ const request = (options) => {
       fail: (err) => {
         console.error('请求失败:', err)
         uni.showToast({
-          title: '网络连接失败，请检查后端服务',
+          title: '网络异常，请稍后重试',
           icon: 'none',
           duration: 3000
         })
