@@ -71,11 +71,20 @@ public class DeviceTestSimulationService {
             return false;
         }
         ScheduledFuture<?> future = runningTasks.remove(deviceId);
-        if (future == null) {
+        if (future != null) {
+            future.cancel(true);
+        }
+        // 幂等：未在跑也视为已停止，便于前端「停止」后立刻落库离线
+        return true;
+    }
+
+    /** 是否仍在模拟队列中（停测后并发上报应丢弃） */
+    public synchronized boolean isSimulationRunning(String deviceId) {
+        if (deviceId == null || deviceId.isBlank()) {
             return false;
         }
-        future.cancel(true);
-        return true;
+        ScheduledFuture<?> future = runningTasks.get(deviceId);
+        return future != null && !future.isCancelled() && !future.isDone();
     }
 
     /** 当前仍在模拟中的设备号集合（顺带清理已结束任务） */
@@ -92,6 +101,10 @@ public class DeviceTestSimulationService {
      */
     private void pushSample(String deviceId) {
         try {
+            // 已停止则丢弃本拍（避免停测与最后一拍入库竞态，又把状态刷回在线）
+            if (!isSimulationRunning(deviceId)) {
+                return;
+            }
             // 步骤1：取基准坐标并随机扰动
             double[] baseCoordinate = getBaseCoordinate(deviceId);
             ThreadLocalRandom random = ThreadLocalRandom.current();
@@ -110,6 +123,10 @@ public class DeviceTestSimulationService {
             sensorData.setTemperature(round(20 + random.nextDouble() * 10));
             sensorData.setHumidity(round(40 + random.nextDouble() * 20));
             sensorData.setDataTime(LocalDateTime.now().format(DATE_TIME_FORMATTER));
+            // 入库前再确认一次，防止 stop 发生在组装字段期间
+            if (!isSimulationRunning(deviceId)) {
+                return;
+            }
             // 步骤3：走 addSensorData 正式链路
             sensorDataService.addSensorData(sensorData);
         } catch (Exception e) {

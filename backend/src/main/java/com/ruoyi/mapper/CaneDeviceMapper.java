@@ -41,4 +41,8 @@ public interface CaneDeviceMapper {
     /** 更新设备信息 */
     @Update("UPDATE cane_device SET device_id = #{deviceId}, user_id = #{userId}, battery_level = #{batteryLevel}, status = #{status} WHERE id = #{id}")
     void update(CaneDevice device);
+
+    /** 按业务设备号更新在线状态（心跳） */
+    @Update("UPDATE cane_device SET status = #{status} WHERE device_id = #{deviceId}")
+    void updateStatusByDeviceId(@Param("deviceId") String deviceId, @Param("status") String status);
 }

@@ -455,6 +455,8 @@ export default {
 
     const toggleDeviceTest = async (row) => {
       try {
+        // 先与后端同步，避免刷新后前端以为已停、实际还在跑，点按钮却变成再次启动
+        await fetchTestingDeviceIds()
         const running = isTesting(row.deviceId)
         const action = running ? 'stop' : 'start'
         const response = await apiFetch(`/api/devices/${row.id}/test/${action}`, {
@@ -463,7 +465,8 @@ export default {
         const data = await response.json()
         if (data.code === 200) {
           await fetchTestingDeviceIds()
-          ElMessage.success(running ? '设备测试已停止' : '设备测试已启动')
+          await fetchDevices()
+          ElMessage.success(running ? '设备测试已停止' : '设备测试已启动（无真硬件，仅模拟上报）')
         } else {
           ElMessage.error((running ? '停止' : '启动') + '设备测试失败: ' + data.msg)
         }

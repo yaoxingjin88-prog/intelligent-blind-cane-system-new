@@ -21,9 +21,9 @@ import java.time.format.DateTimeFormatter;
 public class AlarmNotifyService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    // 注入 mapper / WebSocket，构造注入
     private final AlarmRecordMapper alarmRecordMapper;
     private final AlarmWebSocketHandler alarmWebSocketHandler;
+    private final AppCacheService appCacheService;
 
     /**
      * 异步创建报警并推送
@@ -49,6 +49,7 @@ public class AlarmNotifyService {
             // 步骤3：WebSocket 推送
             alarmWebSocketHandler.sendAlarmNotification(deviceId, alarmRecord);
             alarmWebSocketHandler.broadcastAlarm(alarmRecord);
+            appCacheService.evictDashboardCaches();
             log.info("alarm.created deviceId={} type={} alarmId={}", deviceId, alarmType, alarmRecord.getId());
         } catch (Exception e) {
             log.warn("异步创建报警失败 deviceId={} type={}", deviceId, alarmType, e);

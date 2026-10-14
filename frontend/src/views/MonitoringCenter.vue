@@ -186,6 +186,16 @@ let overviewTimer = null
 
 const isUnhandled = (status) => String(status) === '0' || status === '未处理'
 
+/** 与首页一致：后端心跳状态（近 3 分钟上报）或联调测试中 */
+const isDeviceOnline = (device) => {
+  const status = String(device?.status || '')
+  return device?.testing === true
+    || status === '在线'
+    || status === 'active'
+    || status === 'ACTIVE'
+    || status.toLowerCase() === 'online'
+}
+
 const unhandledAlarms = computed(() => alarms.value
   .filter(alarm => isUnhandled(alarm.status))
   .sort((a, b) => String(b.alarmTime || '').localeCompare(String(a.alarmTime || ''))))
@@ -194,7 +204,7 @@ const filteredDevices = computed(() => devices.value.filter((device) => {
   const keywordValue = keyword.value.trim().toLowerCase()
   const matchesKeyword = !keywordValue || [device.deviceName, device.deviceId, device.userName]
     .some(value => String(value || '').toLowerCase().includes(keywordValue))
-  const online = Boolean(device.latestData)
+  const online = isDeviceOnline(device)
   const hasUnhandledAlarm = Boolean(device.latestAlarm && isUnhandled(device.latestAlarm.status))
   const matchesStatus = statusFilter.value === 'all'
     || (statusFilter.value === 'online' && online)
@@ -226,11 +236,11 @@ const filteredUnhandledAlarms = computed(() => {
 const selectedDevice = computed(() => devices.value.find(device => device.id === selectedDeviceId.value) || null)
 
 const statCards = computed(() => {
-  const onlineCount = devices.value.filter(device => device.latestData).length
+  const onlineCount = devices.value.filter(device => isDeviceOnline(device)).length
   const fallRiskCount = devices.value.filter(device => Boolean(device.latestData?.isFall)).length
   return [
     { label: '设备总数', value: devices.value.length, sub: '当前纳入监控的设备数量' },
-    { label: '在线设备', value: onlineCount, sub: '已获取到最新位置数据的设备' },
+    { label: '在线设备', value: onlineCount, sub: '近 3 分钟有传感上报或测试中' },
     { label: '未处理告警', value: unhandledAlarms.value.length, sub: '需要立即关注的告警事件' },
     { label: '测试中设备', value: runningTestingIds.value.length, sub: `跌倒风险设备 ${fallRiskCount} 台` }
   ]
@@ -258,13 +268,13 @@ const getAlarmBrief = (device) => {
 
 const getDeviceStateLabel = (device) => {
   if (device.latestAlarm && isUnhandled(device.latestAlarm.status)) return '告警中'
-  if (device.latestData) return '在线'
+  if (isDeviceOnline(device)) return '在线'
   return '离线'
 }
 
 const getDeviceStateTag = (device) => {
   if (device.latestAlarm && isUnhandled(device.latestAlarm.status)) return 'danger'
-  if (device.latestData) return 'success'
+  if (isDeviceOnline(device)) return 'success'
   return 'info'
 }
 

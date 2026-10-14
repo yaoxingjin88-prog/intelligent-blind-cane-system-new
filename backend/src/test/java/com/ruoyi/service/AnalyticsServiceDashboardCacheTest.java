@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,11 +22,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * {@link AnalyticsService} 看板缓存单测：单飞合并与 TTL 内复用
+ */
 @ExtendWith(MockitoExtension.class)
 class AnalyticsServiceDashboardCacheTest {
 
@@ -35,12 +40,16 @@ class AnalyticsServiceDashboardCacheTest {
     private SensorDataService sensorDataService;
     @Mock
     private AlarmRecordService alarmRecordService;
+    @Mock
+    private AppCacheService appCacheService;
 
     @InjectMocks
     private AnalyticsService analyticsService;
 
+    /** 共享缓存 miss；构建路径依赖打桩并人为延迟，便于观察单飞 */
     @BeforeEach
     void stubSlowBuild() {
+        when(appCacheService.getMap(anyString())).thenReturn(Optional.empty());
         when(caneDeviceService.getAllDevices()).thenAnswer(invocation -> {
             Thread.sleep(80);
             return Collections.<CaneDevice>emptyList();
@@ -58,6 +67,7 @@ class AnalyticsServiceDashboardCacheTest {
         when(alarmRecordService.getAlarmTypeDistribution()).thenReturn(Collections.emptyList());
     }
 
+    /** 并发请求应合并为一次 build（getAllDevices 只调 1 次） */
     @Test
     void concurrentCallsShareSingleFlightBuild() throws Exception {
         int threads = 8;
@@ -90,6 +100,7 @@ class AnalyticsServiceDashboardCacheTest {
         verify(caneDeviceService, times(1)).getAllDevices();
     }
 
+    /** TTL 内第二次调用直接命中本机 L1，返回同一引用 */
     @Test
     void secondCallWithinTtlUsesCache() {
         Map<String, Object> first = analyticsService.getDashboardData();

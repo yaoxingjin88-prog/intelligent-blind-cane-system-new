@@ -12,6 +12,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * {@link ElectronicFenceService} 单测：按设备查围栏的短 TTL 本地缓存
+ */
 @ExtendWith(MockitoExtension.class)
 class ElectronicFenceServiceCacheTest {
 
@@ -21,6 +24,7 @@ class ElectronicFenceServiceCacheTest {
     @InjectMocks
     private ElectronicFenceService electronicFenceService;
 
+    /** 同一 deviceId 连续两次查询，Mapper 只应访问一次 */
     @Test
     void getByDeviceIdUsesShortTtlCache() {
         ElectronicFence fence = new ElectronicFence();

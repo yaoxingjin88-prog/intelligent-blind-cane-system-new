@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
@@ -31,19 +32,26 @@ public class MonitorOverviewService {
     private final CaneDeviceService caneDeviceService;
     private final SensorDataService sensorDataService;
     private final AlarmRecordService alarmRecordService;
+    private final AppCacheService appCacheService;
 
     /**
      * 获取监控总览（10s 缓存；并发请求合并为一次构建）
-     * 业务步骤：1. 命中缓存则直接返回 2. 单飞异步构建并回填缓存 3. 等待构建结果
+     * 业务步骤：1. 命中本机/共享缓存 2. 单飞异步构建并回填 3. 等待构建结果
      *
      * @return devices / alarms / testingDeviceIds
      */
     public Map<String, Object> getOverview() {
-        // 步骤1：命中缓存则直接返回
+        // 步骤1：命中本机 L1
         long now = System.currentTimeMillis();
         OverviewCache cached = cache;
         if (cached != null && cached.expiresAt > now) {
             return cached.data;
+        }
+        var shared = appCacheService.getMap(AppCacheService.KEY_MONITOR_OVERVIEW);
+        if (shared.isPresent()) {
+            Map<String, Object> data = shared.get();
+            cache = new OverviewCache(data, now + CACHE_MS);
+            return data;
         }
 
         // 步骤2：单飞异步构建并回填缓存
@@ -55,6 +63,12 @@ public class MonitorOverviewService {
                 if (cached != null && cached.expiresAt > now) {
                     return cached.data;
                 }
+                shared = appCacheService.getMap(AppCacheService.KEY_MONITOR_OVERVIEW);
+                if (shared.isPresent()) {
+                    Map<String, Object> data = shared.get();
+                    cache = new OverviewCache(data, now + CACHE_MS);
+                    return data;
+                }
                 inFlight = loadingFuture;
                 if (inFlight == null || inFlight.isCompletedExceptionally()) {
                     final CompletableFuture<Map<String, Object>> created =
@@ -63,7 +77,9 @@ public class MonitorOverviewService {
                     inFlight = created;
                     created.whenComplete((data, err) -> {
                         if (err == null && data != null) {
-                            cache = new OverviewCache(data, System.currentTimeMillis() + CACHE_MS);
+                            long expireAt = System.currentTimeMillis() + CACHE_MS;
+                            cache = new OverviewCache(data, expireAt);
+                            appCacheService.putMap(AppCacheService.KEY_MONITOR_OVERVIEW, data, Duration.ofMillis(CACHE_MS));
                         }
                         if (loadingFuture == created) {
                             loadingFuture = null;

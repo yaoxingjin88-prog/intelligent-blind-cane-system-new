@@ -32,35 +32,30 @@
     </div>
 
     <div v-loading="chartsLoading" class="dashboard-body charts-section">
-    <div class="content-grid">
+    <!-- 主栅格：左热力 | 右三图等分；下排双表对齐，避免高低不一留白 -->
+    <div class="dashboard-main">
       <el-card class="panel panel--map">
         <template #header>
           <div class="panel-header">
             <div>
               <span>风险区域热力图</span>
-              <p class="panel-desc">颜色越偏红，表示该区域风险事件越集中；热点数表示本次统计纳入分析的位置点数量。</p>
+              <p class="panel-desc">颜色越红风险越集中；地图标注 Top 热点。</p>
             </div>
             <el-tag type="danger">{{ validHeatmapPoints.length }} 个热点</el-tag>
           </div>
         </template>
         <div class="heatmap-legend">
-          <div class="legend-scale">
-            <span class="legend-label">风险强度</span>
-            <div class="legend-bar"></div>
-            <div class="legend-ticks">
-              <span>低</span>
-              <span>中</span>
-              <span>高</span>
-            </div>
-          </div>
-          <div class="legend-note">
-            <span>下方列表说明：</span>
-            <span>地图中已重点标注 Top 5 热点；`风险次数` 表示该区域累计触发次数，`最小障碍距离` 表示该热点附近记录到的最近障碍物距离。</span>
+          <span class="legend-label">风险强度</span>
+          <div class="legend-bar"></div>
+          <div class="legend-ticks">
+            <span>低</span>
+            <span>中</span>
+            <span>高</span>
           </div>
         </div>
         <div class="heatmap-wrapper">
           <div ref="mapContainer" class="heatmap"></div>
-          <div class="map-highlight-tip">地图内已重点标注 Top 5 热点</div>
+          <div class="map-highlight-tip">Top {{ topHotspots.length }} 热点</div>
         </div>
         <div class="hotspot-list">
           <div v-for="(point, index) in topHotspots" :key="`${point.lng}-${point.lat}`" class="hotspot-item">
@@ -69,75 +64,62 @@
               <p>{{ point.lng }}, {{ point.lat }}</p>
             </div>
             <div class="hotspot-meta">
-              <span>风险次数：{{ point.count ?? point.value ?? 0 }} 次</span>
-              <span>最小障碍距离：{{ point.minObstacleDistance ?? '-' }} cm</span>
+              <span>风险 {{ point.count ?? point.value ?? 0 }} 次</span>
+              <span>最近障碍 {{ point.minObstacleDistance ?? '-' }} cm</span>
             </div>
           </div>
+          <div v-if="!topHotspots.length" class="hotspot-empty">暂无热点数据</div>
         </div>
       </el-card>
 
-      <div class="chart-stack">
-        <el-card class="panel">
-          <template #header>
-            <div class="panel-header">
-              <span>活跃时长趋势</span>
-            </div>
-          </template>
-          <div ref="activityChartRef" class="chart"></div>
-        </el-card>
-
-        <el-card class="panel">
-          <template #header>
-            <div class="panel-header">
-              <span>设备电量概况</span>
-            </div>
-          </template>
-          <div ref="batteryChartRef" class="chart"></div>
-        </el-card>
-
-        <el-card class="panel">
-          <template #header>
-            <div class="panel-header">
-              <span>报警分布</span>
-            </div>
-          </template>
-          <div ref="alarmChartRef" class="chart"></div>
-        </el-card>
-      </div>
-    </div>
-
-    <div class="bottom-grid">
-      <el-card class="panel">
+      <el-card class="panel panel--activity">
         <template #header>
-          <div class="panel-header">
-            <span>设备报警排行</span>
-          </div>
+          <div class="panel-header"><span>活跃时长趋势</span></div>
         </template>
-        <el-table :data="deviceRanking" size="small" stripe>
-          <el-table-column prop="deviceName" label="设备" min-width="140" />
-          <el-table-column prop="alarmCount" label="报警总数" width="100" />
-          <el-table-column prop="unhandledCount" label="未处理" width="90" />
-          <el-table-column prop="latestAlarmTime" label="最近报警时间" min-width="160" />
+        <div ref="activityChartRef" class="chart"></div>
+      </el-card>
+
+      <el-card class="panel panel--battery">
+        <template #header>
+          <div class="panel-header"><span>设备电量概况</span></div>
+        </template>
+        <div ref="batteryChartRef" class="chart"></div>
+      </el-card>
+
+      <el-card class="panel panel--alarm">
+        <template #header>
+          <div class="panel-header"><span>报警分布</span></div>
+        </template>
+        <div ref="alarmChartRef" class="chart"></div>
+      </el-card>
+
+      <el-card class="panel panel--ranking">
+        <template #header>
+          <div class="panel-header"><span>设备报警排行</span></div>
+        </template>
+        <el-table :data="deviceRanking" size="small" stripe class="panel-table">
+          <el-table-column prop="deviceName" label="设备" min-width="120" />
+          <el-table-column prop="alarmCount" label="报警总数" width="90" />
+          <el-table-column prop="unhandledCount" label="未处理" width="80" />
+          <el-table-column prop="latestAlarmTime" label="最近报警时间" min-width="150" />
         </el-table>
       </el-card>
 
-      <el-card class="panel">
+      <el-card class="panel panel--health">
         <template #header>
-          <div class="panel-header">
-            <span>设备健康度面板</span>
-          </div>
+          <div class="panel-header"><span>设备健康度面板</span></div>
         </template>
-        <el-table :data="deviceHealth" size="small" stripe>
-          <el-table-column prop="deviceName" label="设备" min-width="140" />
-          <el-table-column label="健康度" width="110">
+        <el-table :data="deviceHealth" size="small" stripe class="panel-table">
+          <el-table-column prop="deviceName" label="设备" min-width="120" />
+          <el-table-column label="健康度" width="90">
             <template #default="scope">
               <el-tag :type="getHealthTagType(scope.row.healthScore)">{{ scope.row.healthScore }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="batteryLevel" label="电量" width="80" />
-          <el-table-column prop="status" label="状态" width="90" />
-          <el-table-column prop="latestDataTime" label="最近数据时间" min-width="160" />
-          <el-table-column prop="unhandledCount" label="待处理报警" width="100" />
+          <el-table-column prop="batteryLevel" label="电量" width="70" />
+          <el-table-column prop="status" label="状态" width="80" />
+          <el-table-column prop="latestDataTime" label="最近数据时间" min-width="150" />
+          <el-table-column prop="unhandledCount" label="待处理" width="80" />
         </el-table>
       </el-card>
     </div>
@@ -514,14 +496,14 @@ onUnmounted(() => {
 }
 
 .charts-section {
-  min-height: 480px;
+  min-height: 0;
 }
 
 .dashboard-body {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  min-height: 320px;
+  gap: 16px;
+  min-height: 0;
 }
 .hero {
   display: flex;
@@ -541,7 +523,7 @@ onUnmounted(() => {
   gap: 16px;
 }
 .stat-card, .panel {
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
@@ -562,115 +544,150 @@ onUnmounted(() => {
   color: #94a3b8;
   font-size: 12px;
 }
-.content-grid {
+
+/* 12 列栅格：左热力跨两行，右上活跃/电量，右中报警，下排排行+健康 */
+.dashboard-main {
   display: grid;
-  grid-template-columns: 1.45fr 1fr;
-  gap: 20px;
-  align-items: start;
+  grid-template-columns: 1.35fr 1fr 1fr;
+  grid-template-rows: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+  gap: 16px;
+  align-items: stretch;
+  grid-template-areas:
+    "map activity battery"
+    "map alarm ranking"
+    "health health health";
 }
-.chart-stack, .bottom-grid {
-  display: grid;
-  gap: 20px;
+
+.panel--map { grid-area: map; }
+.panel--activity { grid-area: activity; }
+.panel--battery { grid-area: battery; }
+.panel--alarm { grid-area: alarm; }
+.panel--ranking { grid-area: ranking; }
+.panel--health { grid-area: health; }
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
 }
-.chart-stack {
-  align-content: start;
+
+.panel :deep(.el-card__header) {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f1f5f9;
 }
-.bottom-grid {
-  grid-template-columns: 1fr 1.2fr;
-  align-items: start;
+
+.panel :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 16px 16px;
 }
+
 .panel-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   font-weight: 600;
   color: #1e293b;
 }
 .panel-desc {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   font-size: 12px;
   font-weight: 400;
   color: #64748b;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 .heatmap-legend {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 14px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
   background: #f8fafc;
   color: #475569;
   font-size: 12px;
 }
-.legend-scale {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 220px;
-}
 .legend-label {
   font-weight: 600;
   color: #334155;
+  white-space: nowrap;
 }
 .legend-bar {
-  height: 10px;
+  height: 8px;
   border-radius: 999px;
   background: linear-gradient(90deg, #3b82f6 0%, #22c55e 40%, #f59e0b 72%, #ef4444 100%);
 }
 .legend-ticks {
   display: flex;
-  justify-content: space-between;
+  gap: 8px;
   color: #64748b;
-}
-.legend-note {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  line-height: 1.6;
+  white-space: nowrap;
 }
 .heatmap-wrapper {
   position: relative;
+  flex: 1;
+  min-height: 280px;
 }
 .map-highlight-tip {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  top: 12px;
+  right: 12px;
   z-index: 10;
-  padding: 6px 10px;
+  padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   color: #ef4444;
   font-size: 12px;
   font-weight: 600;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.1);
 }
 .heatmap {
-  height: 460px;
-  border-radius: 14px;
+  height: 100%;
+  min-height: 280px;
+  border-radius: 12px;
   overflow: hidden;
 }
 .chart {
-  height: 240px;
+  flex: 1;
+  width: 100%;
+  min-height: 180px;
+  height: 180px;
+}
+.panel-table {
+  width: 100%;
 }
 .hotspot-list {
-  margin-top: 16px;
+  margin-top: 12px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.hotspot-empty {
+  padding: 16px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  background: #f8fafc;
+  border-radius: 10px;
 }
 .hotspot-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 14px;
-  border-radius: 12px;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
   background: #f8fafc;
 }
 .hotspot-item p {
-  margin-top: 4px;
+  margin-top: 2px;
   color: #64748b;
   font-size: 12px;
 }
@@ -678,21 +695,33 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
+  gap: 2px;
   color: #ef4444;
   font-size: 12px;
   text-align: right;
+  flex-shrink: 0;
 }
+
 @media (max-width: 1400px) {
   .stats-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .content-grid, .bottom-grid {
-    grid-template-columns: 1fr;
+  .dashboard-main {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto;
+    grid-template-areas:
+      "map map"
+      "activity battery"
+      "alarm ranking"
+      "health health";
   }
-  .heatmap-legend {
-    flex-direction: column;
-    align-items: flex-start;
+  .heatmap-wrapper,
+  .heatmap {
+    min-height: 320px;
+    height: 320px;
+  }
+  .chart {
+    height: 200px;
   }
 }
 
@@ -711,6 +740,21 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 
+  .dashboard-main {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "map"
+      "activity"
+      "battery"
+      "alarm"
+      "ranking"
+      "health";
+  }
+
+  .heatmap-legend {
+    grid-template-columns: 1fr;
+  }
+
   .panel-header {
     flex-direction: column;
   }
@@ -718,7 +762,7 @@ onUnmounted(() => {
   .hotspot-item {
     flex-direction: column;
     align-items: flex-start;
-    gap: 10px;
+    gap: 8px;
   }
 
   .hotspot-meta {
@@ -727,7 +771,7 @@ onUnmounted(() => {
   }
 
   .map-highlight-tip {
-    left: 14px;
+    left: 12px;
     right: auto;
   }
 }

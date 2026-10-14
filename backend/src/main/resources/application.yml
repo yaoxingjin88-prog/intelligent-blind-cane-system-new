@@ -10,6 +10,17 @@ spring:
   config:
     # 兼容工作目录为 backend/ 或仓库根目录
     import: optional:file:./application-local.yml,optional:file:./backend/application-local.yml,optional:classpath:application-local.yml
+  # 默认排除 Redis 自动配置；仅当 app.redis.enabled=true 时由 RedisConfig 手工装配
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
   datasource:
     # JDBC；库名 smart_cane，时区上海
     url: ${DB_URL:jdbc:mysql://localhost:3306/smart_cane?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_0900_ai_ci&serverTimezone=Asia/Shanghai}
@@ -48,6 +59,9 @@ mybatis:
 
 # ---------- 业务安全 / 限流 / 数据裁剪 ----------
 app:
+  # Redis：默认关闭（本地无 Redis 也能跑）；生产多实例建议 REDIS + enabled=true
+  redis:
+    enabled: ${REDIS_ENABLED:false}
   security:
     # 是否启用 JWT 鉴权；本地联调可 AUTH_ENABLED=false
     auth-enabled: ${AUTH_ENABLED:true}

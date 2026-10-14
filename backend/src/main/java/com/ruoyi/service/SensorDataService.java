@@ -46,6 +46,7 @@ public class SensorDataService {
     private final AlarmWebSocketHandler alarmWebSocketHandler;
     private final ElectronicFenceService electronicFenceService;
     private final AlarmNotifyService alarmNotifyService;
+    private final AppCacheService appCacheService;
 
     public List<SensorData> getAllSensorData() {
         return getRecentSensorData(1000);
@@ -120,8 +121,11 @@ public class SensorDataService {
             previousLatest = sensorDataMapper.getLatestByDeviceId(deviceId);
         }
 
-        // 步骤3：确保设备档案存在
+        // 步骤3：确保设备档案存在，并刷新心跳在线
         ensureDeviceExists(deviceId);
+        if (deviceId != null && !deviceId.isBlank()) {
+            caneDeviceMapper.updateStatusByDeviceId(deviceId, "在线");
+        }
 
         // 步骤4：落库 + 写穿缓存
         sensorDataMapper.insert(sensorData);
@@ -154,6 +158,7 @@ public class SensorDataService {
             alarmNotifyService.createAlarmAndNotify(deviceId, "电子围栏越界报警");
         }
 
+        appCacheService.evictDashboardCaches();
         log.info("sensor.ingest deviceId={} fall={} fallTriggered={} fenceTriggered={}",
                 deviceId,
                 Boolean.TRUE.equals(latestSensorData.getIsFall()),

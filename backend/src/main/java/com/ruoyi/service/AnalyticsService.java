@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
@@ -39,19 +40,27 @@ public class AnalyticsService {
     private final CaneDeviceService caneDeviceService;
     private final SensorDataService sensorDataService;
     private final AlarmRecordService alarmRecordService;
+    private final AppCacheService appCacheService;
 
     /**
      * 获取看板聚合数据（30s 缓存；并发请求合并为一次构建）
-     * 业务步骤：1. 命中缓存则直接返回 2. 单飞异步构建并回填缓存 3. 等待构建结果
+     * 业务步骤：1. 命中本机/Redis 缓存 2. 单飞异步构建并回填 3. 等待构建结果
      *
      * @return overview / activityTrend / batteryTrend / alarmDistribution 等
      */
     public Map<String, Object> getDashboardData() {
-        // 步骤1：命中缓存则直接返回
+        // 步骤1：命中本机 L1
         long now = System.currentTimeMillis();
         DashboardCache cached = dashboardCache;
         if (cached != null && cached.expiresAt > now) {
             return cached.data;
+        }
+        // 步骤1b：共享 L2（Redis 或 AppCache 本地）
+        Optional<Map<String, Object>> shared = appCacheService.getMap(AppCacheService.KEY_DASHBOARD);
+        if (shared.isPresent()) {
+            Map<String, Object> data = shared.get();
+            dashboardCache = new DashboardCache(data, now + DASHBOARD_CACHE_MS);
+            return data;
         }
 
         // 步骤2：单飞异步构建并回填缓存
@@ -63,6 +72,12 @@ public class AnalyticsService {
                 if (cached != null && cached.expiresAt > now) {
                     return cached.data;
                 }
+                shared = appCacheService.getMap(AppCacheService.KEY_DASHBOARD);
+                if (shared.isPresent()) {
+                    Map<String, Object> data = shared.get();
+                    dashboardCache = new DashboardCache(data, now + DASHBOARD_CACHE_MS);
+                    return data;
+                }
                 inFlight = loadingFuture;
                 if (inFlight == null || inFlight.isCompletedExceptionally()) {
                     final CompletableFuture<Map<String, Object>> created =
@@ -71,7 +86,9 @@ public class AnalyticsService {
                     inFlight = created;
                     created.whenComplete((data, err) -> {
                         if (err == null && data != null) {
-                            dashboardCache = new DashboardCache(data, System.currentTimeMillis() + DASHBOARD_CACHE_MS);
+                            long expireAt = System.currentTimeMillis() + DASHBOARD_CACHE_MS;
+                            dashboardCache = new DashboardCache(data, expireAt);
+                            appCacheService.putMap(AppCacheService.KEY_DASHBOARD, data, Duration.ofMillis(DASHBOARD_CACHE_MS));
                         }
                         if (loadingFuture == created) {
                             loadingFuture = null;

@@ -17,6 +17,9 @@ spring:
       connection-timeout: 10000
 
 app:
+  # 多实例部署时建议 REDIS_ENABLED=true
+  redis:
+    enabled: ${REDIS_ENABLED:false}
   security:
     auth-enabled: ${AUTH_ENABLED:true}
     # 生产禁止测试短信码

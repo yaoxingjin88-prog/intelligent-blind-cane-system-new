@@ -87,6 +87,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
+        <!-- Redis：限流 / 看板缓存（app.redis.enabled=true 时启用，默认关闭） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
         <!-- MP3 解码：百度语音识别前将录音转为 PCM -->
         <dependency>
             <groupId>com.googlecode.soundlibs</groupId>

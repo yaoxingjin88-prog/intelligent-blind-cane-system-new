@@ -20,7 +20,19 @@ ai:
     api-key: 请填写百度APIKey
     secret-key: 请填写百度SecretKey
 
+# 可选：启用 Redis 做限流与看板共享缓存（需本机/服务器已启动 Redis）
+# spring:
+#   data:
+#     redis:
+#       host: 127.0.0.1
+#       port: 6379
+# app:
+#   redis:
+#     enabled: true
+
 app:
+  redis:
+    enabled: false
   security:
     # 明文或 BCrypt 均可；生成 BCrypt 可用项目内 PasswordEncoder / 在线工具
     admin-password: 请修改管理端密码
