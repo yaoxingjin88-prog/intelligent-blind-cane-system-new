@@ -1,6 +1,7 @@
 package com.ruoyi.controller;
 
 import lombok.RequiredArgsConstructor;
+import com.ruoyi.dto.DeviceBindRequest;
 import com.ruoyi.entity.CaneDevice;
 import com.ruoyi.entity.Result;
 import com.ruoyi.service.CaneDeviceService;
@@ -68,15 +69,33 @@ public class CaneDeviceController {
 
     /**
      * 更新设备 PUT /api/devices
-     *
-     * @param device 设备实体
-     * @return 统一返回结果
+     * 仅更新档案字段；归属请用 bind/unbind
      */
-    @Operation(summary = "更新设备", description = "更新盲杖设备信息")
+    @Operation(summary = "更新设备", description = "更新设备编号/名称/电量/状态，不改绑定归属")
     @PutMapping
     public Result updateDevice(@RequestBody CaneDevice device) {
-        // 调用业务层更新
         deviceService.updateDevice(device);
+        return Result.success();
+    }
+
+    /**
+     * 绑定设备到用户 POST /api/devices/{id}/bind
+     */
+    @Operation(summary = "绑定设备", description = "将未绑定设备挂到指定用户，一人一台")
+    @PostMapping("/{id}/bind")
+    public Result bindDevice(@PathVariable Long id, @RequestBody DeviceBindRequest request) {
+        Long userId = request != null ? request.getUserId() : null;
+        deviceService.bindDeviceToUser(id, userId);
+        return Result.success();
+    }
+
+    /**
+     * 解绑设备 POST /api/devices/{id}/unbind
+     */
+    @Operation(summary = "解绑设备", description = "清除设备上的用户归属")
+    @PostMapping("/{id}/unbind")
+    public Result unbindDevice(@PathVariable Long id) {
+        deviceService.unbindDevice(id);
         return Result.success();
     }
 

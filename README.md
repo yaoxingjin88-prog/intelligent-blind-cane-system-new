@@ -9,6 +9,8 @@
 - 可选 Redis（限流 / 看板共享缓存），未启用时自动回退本机缓存
 - WebSocket 实时推送报警 / 围栏 / 过街辅助
 - 小程序接口按域拆分；设备「在线」按传感心跳判定（联调可用设备测试模拟）
+- 家庭监护圈：持杖用户 + 主监护人 + 子监护人；主监护人绑设备/邀请成员，子监护人可监视
+- 设备绑定：一人一台；专用 bind/unbind / 用户分配接口，普通更新设备不改归属
 
 ## 项目结构
 
@@ -181,6 +183,10 @@ Uni-app + uView Plus + Pinia；地图（微信 / 高德）。
 |------|------|
 | `POST /api/login` | 管理端登录 |
 | `GET /api/devices` | 设备列表（状态含心跳在线） |
+| `PUT /api/devices` | 更新设备档案（不改归属） |
+| `POST /api/devices/{id}/bind` | 绑定设备到用户（一人一台） |
+| `POST /api/devices/{id}/unbind` | 解绑设备 |
+| `PUT /api/users/{id}/device` | 用户侧分配/更换/清空绑定 |
 | `POST /api/devices/{id}/test/start\|stop` | 联调模拟启停 |
 | `POST /api/sensor-data` | 硬件传感上报 |
 | `GET /api/analytics/dashboard` | 数据看板（可 Redis 缓存） |

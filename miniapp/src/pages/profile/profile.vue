@@ -21,7 +21,7 @@
               <text class="user-name">{{ displayName }}</text>
               <text class="verified-badge" v-if="userInfo && userInfo.isVerified">已实名</text>
             </view>
-            <text class="user-role">家属监护账户</text>
+            <text class="user-role">{{ roleLabel }}</text>
             <text class="user-phone">{{ (userInfo && userInfo.phone) ? userInfo.phone : '未绑定手机' }}</text>
           </view>
           <view class="message-icon" @click="navigateToMessage">
@@ -130,6 +130,13 @@
       </view>
 
       <view class="settings-card">
+        <view class="menu-item" @click="navigateToSubpage('family-members')">
+          <view class="menu-icon family">
+            <text>👨‍👩‍👧</text>
+          </view>
+          <text class="menu-title">家庭监护成员</text>
+          <text class="menu-arrow">›</text>
+        </view>
         <view class="menu-item" @click="navigateToSubpage('elder-info')">
           <view class="menu-icon elder">
             <text>🦯</text>
@@ -165,6 +172,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { useUserStore, useDeviceStore, useAlarmStore, useSettingsStore } from '@/store'
 import { logout } from '@/api/auth'
 import { getAlarmList } from '@/api/alarm'
+import { getFamilyMembers } from '@/api/family'
 
 const userStore = useUserStore()
 const deviceStore = useDeviceStore()
@@ -173,9 +181,18 @@ const settingsStore = useSettingsStore()
 
 // 用户信息
 const userInfo = computed(() => userStore.userInfo)
+const roleLabel = computed(() => {
+  const role = userInfo.value && userInfo.value.role
+  if (role === 'PRIMARY') return '主监护人'
+  if (role === 'MEMBER') return '子监护人'
+  return '家属监护账户'
+})
 const displayName = computed(() => {
   if (userInfo.value && userInfo.value.nickname) {
     return userInfo.value.nickname
+  }
+  if (userInfo.value && userInfo.value.name) {
+    return userInfo.value.name
   }
   if (userInfo.value && userInfo.value.username) {
     return userInfo.value.username
@@ -233,6 +250,18 @@ const loadUnreadCount = async () => {
   }
 }
 
+const refreshFamilyRole = async () => {
+  try {
+    const res = await getFamilyMembers()
+    const me = res.data && res.data.me
+    if (me && userStore.setUserInfo) {
+      userStore.setUserInfo({ ...userStore.userInfo, ...me })
+    }
+  } catch (e) {
+    // 未登录或旧后端无接口时忽略
+  }
+}
+
 // 初始化
 onMounted(async () => {
   userStore.restoreFromStorage()
@@ -252,6 +281,7 @@ onMounted(async () => {
     alarmStore.fetchAlarmStatistics(deviceStore.currentDevice.deviceId)
   }
   
+  await refreshFamilyRole()
   loadUnreadCount()
 })
 
@@ -642,6 +672,10 @@ const chooseAvatar = () => {
     &.crossing {
       background: linear-gradient(135deg, #1d4ed8, #22c55e);
       color: #ffffff;
+    }
+
+    &.family {
+      background: #ecfeff;
     }
 
     &.elder {

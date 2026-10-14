@@ -19,7 +19,12 @@ public interface VisuallyImpairedUserMapper {
 
     /** 插入用户 */
     @Insert("INSERT INTO visually_impaired_user (username, password, name, age, gender, blood_type, phone, id_card, address, emergency_contact, emergency_phone, medical_history) VALUES (#{username}, #{password}, #{name}, #{age}, #{gender}, #{bloodType}, #{phone}, #{idCard}, #{address}, #{emergencyContact}, #{emergencyPhone}, #{medicalHistory})")
+    @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(VisuallyImpairedUser user);
+
+    /** 按用户名查询（家庭注册占位去重） */
+    @Select("SELECT id, username, password, name, age, gender, blood_type as bloodType, phone, id_card as idCard, address, emergency_contact as emergencyContact, emergency_phone as emergencyPhone, medical_history as medicalHistory FROM visually_impaired_user WHERE username = #{username} LIMIT 1")
+    VisuallyImpairedUser findByUsername(String username);
 
     /** 按主键删除 */
     @Delete("DELETE FROM visually_impaired_user WHERE id = #{id}")

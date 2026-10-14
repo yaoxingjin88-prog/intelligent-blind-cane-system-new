@@ -23,7 +23,7 @@
               <text class="device-battery">电量 {{ device.batteryLevel }}%</text>
             </view>
           </view>
-          <view class="device-actions">
+          <view v-if="isPrimary" class="device-actions">
             <text class="action-btn" @click.stop="unbindDevice(device)">解绑</text>
           </view>
         </view>
@@ -33,7 +33,12 @@
       <view v-else class="empty-state">
         <text class="empty-icon">📱</text>
         <text class="empty-text">暂无绑定设备</text>
-        <button class="bind-btn" @click="showBindModal = true">绑定设备</button>
+        <text v-if="!isPrimary" class="empty-hint">请联系主监护人绑定设备</text>
+        <button v-else class="bind-btn" @click="showBindModal = true">绑定设备</button>
+      </view>
+
+      <view v-if="deviceList.length > 0 && isPrimary" class="bind-more">
+        <text class="one-device-hint">每个家庭仅可绑定一台盲杖；解绑后可重新绑定</text>
       </view>
     </scroll-view>
 
@@ -91,9 +96,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { useDeviceStore, useUserStore } from '@/store'
 import { bindDevice, unbindDevice as unbindDeviceApi } from '@/api/device'
+import { getFamilyMembers } from '@/api/family'
 
 const deviceStore = useDeviceStore()
 const userStore = useUserStore()
+const isPrimary = ref(true)
 
 // 弹窗状态
 const showBindModal = ref(false)
@@ -109,9 +116,25 @@ const deviceList = computed(() => deviceStore.deviceList)
 // 当前设备
 const currentDevice = computed(() => deviceStore.currentDevice)
 
+const refreshRole = async () => {
+  try {
+    const res = await getFamilyMembers()
+    const me = res.data && res.data.me
+    isPrimary.value = !me || me.role === 'PRIMARY'
+    if (me) {
+      userStore.setUserInfo({ ...userStore.userInfo, ...me })
+    }
+  } catch (e) {
+    const role = userStore.userInfo && userStore.userInfo.role
+    isPrimary.value = role !== 'MEMBER'
+  }
+}
+
 // 初始化
-onMounted(() => {
+onMounted(async () => {
   deviceStore.restoreFromStorage()
+  userStore.restoreFromStorage()
+  await refreshRole()
   if (userStore.isLoggedIn) {
     deviceStore.fetchDeviceList()
   }
@@ -152,6 +175,14 @@ const manualBind = () => {
 
 // 确认绑定
 const confirmBind = async () => {
+  if (!isPrimary.value) {
+    uni.showToast({ title: '仅主监护人可绑定设备', icon: 'none' })
+    return
+  }
+  if (deviceList.value.length > 0) {
+    uni.showToast({ title: '已绑定一台设备，请先解绑', icon: 'none' })
+    return
+  }
   if (!deviceIdInput.value) {
     uni.showToast({
       title: '请输入设备ID',
@@ -351,6 +382,12 @@ const unbindDevice = (device) => {
   .empty-text {
     font-size: 28rpx;
     color: #9ca3af;
+    margin-bottom: 16rpx;
+  }
+
+  .empty-hint {
+    font-size: 24rpx;
+    color: #cbd5e1;
     margin-bottom: 48rpx;
   }
 
@@ -362,6 +399,17 @@ const unbindDevice = (device) => {
     font-size: 28rpx;
     font-weight: 600;
     border: none;
+  }
+}
+
+.bind-more {
+  padding: 24rpx 32rpx 48rpx;
+  text-align: center;
+
+  .one-device-hint {
+    font-size: 24rpx;
+    color: #94a3b8;
+    line-height: 1.5;
   }
 }
 

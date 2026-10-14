@@ -3,7 +3,7 @@
     <div class="page-hero">
       <div>
         <h2>用户管理</h2>
-        <p>统一查看用户基础信息、设备绑定情况与联系资料</p>
+        <p>档案、一人一台盲杖绑定，以及主/子监护人家庭圈</p>
       </div>
       <el-button type="primary" @click="openAddUserDialog">
         <el-icon><Plus /></el-icon>
@@ -24,45 +24,54 @@
         <div class="card-header">
           <div>
             <span>用户列表</span>
-            <p class="header-subtitle">支持查看用户当前绑定的盲杖设备、在线状态和电量概况</p>
+            <p class="header-subtitle">设备归属用户；主监护人管理绑定，子监护人可监视</p>
           </div>
-          <el-tag type="primary" effect="plain">共 {{ total }} 位用户</el-tag>
         </div>
       </template>
       
       <el-table :data="paginatedUsers" class="users-table" style="width: 100%" stripe>
-        <el-table-column prop="id" label="ID" width="80" align="center" />
-        <el-table-column prop="username" label="用户名" min-width="140" />
-        <el-table-column prop="name" label="姓名" min-width="120" />
-        <el-table-column prop="phone" label="电话" min-width="150" />
-        <el-table-column label="绑定设备" min-width="260">
+        <el-table-column prop="id" label="ID" width="64" align="center" />
+        <el-table-column prop="name" label="姓名" min-width="100" />
+        <el-table-column prop="username" label="用户名" min-width="110" />
+        <el-table-column prop="phone" label="电话" min-width="120" />
+        <el-table-column label="绑定设备" min-width="200">
           <template #default="{ row }">
-            <div v-if="row.boundDevices && row.boundDevices.length" class="device-list">
-              <div class="device-tags">
-                <el-tag
-                  v-for="device in row.boundDevices"
-                  :key="device.id || device.deviceId"
-                  :type="getDeviceTagType(device.status)"
-                  effect="light"
-                  class="device-tag"
-                >
-                  {{ device.deviceName || device.deviceId }}
-                </el-tag>
-              </div>
-              <span class="device-summary">{{ formatDeviceSummary(row.boundDevices) }}</span>
+            <div v-if="primaryBoundDevice(row)" class="device-inline">
+              <span class="status-dot" :class="deviceStatusClass(primaryBoundDevice(row))" />
+              <span class="device-inline-text">
+                {{ formatDeviceShort(primaryBoundDevice(row)) }}
+                <span class="device-inline-meta">{{ formatBattery(primaryBoundDevice(row).batteryLevel) }}</span>
+              </span>
             </div>
-            <el-tag v-else type="info" effect="plain">未绑定设备</el-tag>
+            <span v-else class="device-empty">未绑定</span>
           </template>
         </el-table-column>
-        <el-table-column prop="address" label="地址" min-width="220" show-overflow-tooltip />
-        <el-table-column label="操作" width="180" align="center">
+        <el-table-column label="主监护人" min-width="160">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="openEditUserDialog(row)">
-              <el-icon><Edit /></el-icon>编辑
-            </el-button>
-            <el-button type="danger" link size="small" @click="deleteUser(row.id)">
-              <el-icon><Delete /></el-icon>删除
-            </el-button>
+            <div v-if="row.familyGuardians && row.familyGuardians.length" class="family-cell">
+              <span class="family-primary">{{ formatPrimaryGuardian(row.familyGuardians) }}</span>
+              <span v-if="memberGuardianCount(row.familyGuardians) > 0" class="family-meta">
+                +{{ memberGuardianCount(row.familyGuardians) }} 子监护人
+              </span>
+            </div>
+            <span v-else class="device-empty">未配置</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="address" label="地址" min-width="160" show-overflow-tooltip />
+        <el-table-column label="操作" width="200" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" @click="openEditUserDialog(row)">编辑</el-button>
+            <el-button type="success" link size="small" @click="openFamilyDialog(row)">家庭圈</el-button>
+            <el-tooltip
+              v-if="primaryBoundDevice(row)"
+              content="已绑定设备，请先解绑后再删除"
+              placement="top"
+            >
+              <span class="delete-disabled-wrap">
+                <el-button type="danger" link size="small" disabled>删除</el-button>
+              </span>
+            </el-tooltip>
+            <el-button v-else type="danger" link size="small" @click="deleteUser(row.id)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -103,11 +112,17 @@
           <el-input v-model="addUserForm.address" placeholder="请输入地址" />
         </el-form-item>
         <el-form-item label="绑定设备">
-          <el-select v-model="addUserForm.selectedDeviceIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="请选择绑定设备" style="width: 100%">
+          <el-select
+            v-model="addUserForm.selectedDeviceId"
+            clearable
+            filterable
+            :placeholder="bindableDevices().length ? '每人仅可绑定一台未占用设备' : '暂无未绑定设备'"
+            style="width: 100%"
+          >
             <el-option
-              v-for="device in availableDeviceOptions(addUserForm.selectedDeviceIds)"
+              v-for="device in bindableDevices()"
               :key="device.id"
-              :label="`${device.deviceName || device.deviceId}（${device.deviceId}）`"
+              :label="formatDeviceOptionLabel(device)"
               :value="device.id"
             />
           </el-select>
@@ -143,11 +158,17 @@
           <el-input v-model="editUserForm.address" placeholder="请输入地址" />
         </el-form-item>
         <el-form-item label="绑定设备">
-          <el-select v-model="editUserForm.selectedDeviceIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="请选择绑定设备" style="width: 100%">
+          <el-select
+            v-model="editUserForm.selectedDeviceId"
+            clearable
+            filterable
+            :placeholder="bindableDevices(editUserForm.id).length ? '每人仅可绑定一台（已占用设备不可选）' : '暂无可用设备'"
+            style="width: 100%"
+          >
             <el-option
-              v-for="device in availableDeviceOptions(editUserForm.selectedDeviceIds, editUserForm.id)"
+              v-for="device in bindableDevices(editUserForm.id)"
               :key="device.id"
-              :label="`${device.deviceName || device.deviceId}（${device.deviceId}）`"
+              :label="formatDeviceOptionLabel(device, editUserForm.id)"
               :value="device.id"
             />
           </el-select>
@@ -160,33 +181,74 @@
         </span>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="familyDialogVisible" :title="`家庭监护圈 · ${familyTargetUser?.name || ''}`" width="520px">
+      <div v-if="familyTargetUser" class="family-dialog">
+        <div v-for="g in familyTargetUser.familyGuardians || []" :key="g.id" class="family-row">
+          <div>
+            <strong>{{ g.name || '未命名' }}</strong>
+            <el-tag size="small" :type="g.role === 'PRIMARY' ? 'success' : 'info'" class="family-role-tag">
+              {{ g.role === 'PRIMARY' ? '主监护人' : '子监护人' }}
+            </el-tag>
+            <div class="family-row-meta">{{ g.relation || '家属' }} · {{ g.phone }}</div>
+          </div>
+          <el-button
+            v-if="g.role !== 'PRIMARY'"
+            type="danger"
+            link
+            size="small"
+            @click="removeGuardian(g)"
+          >移除</el-button>
+        </div>
+        <el-empty v-if="!(familyTargetUser.familyGuardians || []).length" description="暂无监护人" :image-size="64" />
+
+        <el-divider content-position="left">添加子监护人</el-divider>
+        <el-form :model="inviteForm" label-width="72px">
+          <el-form-item label="手机号">
+            <el-input v-model="inviteForm.phone" placeholder="登录小程序的手机号" />
+          </el-form-item>
+          <el-form-item label="姓名">
+            <el-input v-model="inviteForm.name" placeholder="可选" />
+          </el-form-item>
+          <el-form-item label="关系">
+            <el-input v-model="inviteForm.relation" placeholder="如子女、配偶" />
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button @click="familyDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="inviteGuardian">添加</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRoute } from 'vue-router'
-import { Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { fetchJson, apiFetch } from '../utils/http'
 
 export default {
   name: 'Users',
   components: {
-    Plus,
-    Edit,
-    Delete
+    Plus
   },
   setup() {
     const route = useRoute()
     const users = ref([])
     const devices = ref([])
+    const guardians = ref([])
     const total = ref(0)
     const currentPage = ref(1)
     const pageSize = ref(10)
     
     const addDialogVisible = ref(false)
     const editDialogVisible = ref(false)
+    const familyDialogVisible = ref(false)
+    const familyTargetUser = ref(null)
+    const inviteForm = ref({ phone: '', name: '', relation: '家属' })
     
     const addUserForm = ref({
       username: '',
@@ -195,7 +257,7 @@ export default {
       phone: '',
       idCard: '',
       address: '',
-      selectedDeviceIds: []
+      selectedDeviceId: null
     })
     
     const editUserForm = ref({
@@ -206,7 +268,7 @@ export default {
       phone: '',
       idCard: '',
       address: '',
-      selectedDeviceIds: []
+      selectedDeviceId: null
     })
     
     const addUserRules = ref({
@@ -238,81 +300,101 @@ export default {
 
     const statCards = computed(() => {
       const boundUsers = users.value.filter(user => user.boundDevices && user.boundDevices.length > 0).length
-      const onlineDevices = devices.value.filter(device => device.status === '在线').length
+      const unboundUsers = total.value - boundUsers
+      const unboundDevices = devices.value.filter(device => device.userId == null || device.userId === '').length
+      const onlineBound = devices.value.filter(device =>
+        device.userId != null && device.userId !== '' && device.status === '在线'
+      ).length
       return [
-        { label: '用户总数', value: total.value, sub: '当前系统中的用户数量' },
-        { label: '已绑定设备用户', value: boundUsers, sub: '至少绑定 1 台盲杖设备' },
-        { label: '未绑定设备用户', value: total.value - boundUsers, sub: '建议尽快完成设备分配' },
-        { label: '在线设备', value: onlineDevices, sub: `共关联设备 ${devices.value.length} 台` }
+        { label: '用户总数', value: total.value, sub: '被监护的盲杖使用人' },
+        { label: '已绑定', value: boundUsers, sub: '一人一台，已完成绑定' },
+        { label: '待绑定用户', value: unboundUsers, sub: unboundDevices ? `库存未绑设备 ${unboundDevices} 台` : '暂无闲置设备' },
+        { label: '在线用户', value: onlineBound, sub: '绑定设备当前在线的用户' }
       ]
     })
 
-    const mergeUsersWithDevices = (userList, deviceList) => {
+    const mergeUsersWithDevices = (userList, deviceList, guardianList = []) => {
       return userList.map(user => {
-        const boundDevices = deviceList.filter(device => Number(device.userId) === Number(user.id))
+        // 一人一台：只保留 id 最小的一台，避免历史多绑脏数据撑开展示
+        const boundDevices = deviceList
+          .filter(device => Number(device.userId) === Number(user.id))
+          .sort((a, b) => Number(a.id) - Number(b.id))
+          .slice(0, 1)
+        const familyGuardians = guardianList
+          .filter(g => Number(g.userId) === Number(user.id))
+          .sort((a, b) => (a.role === 'PRIMARY' ? 0 : 1) - (b.role === 'PRIMARY' ? 0 : 1))
         return {
           ...user,
-          boundDevices
+          boundDevices,
+          familyGuardians
         }
       })
     }
 
-    const getDeviceTagType = (status) => {
-      if (status === '在线') return 'success'
-      if (status === '离线') return 'info'
-      return 'warning'
+    const formatPrimaryGuardian = (familyGuardians = []) => {
+      const primary = familyGuardians.find(g => g.role === 'PRIMARY')
+      return primary ? (primary.name || primary.phone) : '未设置'
     }
 
-    const formatDeviceSummary = (boundDevices) => {
-      if (!boundDevices || !boundDevices.length) return '未绑定设备'
-      const onlineCount = boundDevices.filter(device => device.status === '在线').length
-      const batteryValues = boundDevices
-        .map(device => Number(device.batteryLevel))
-        .filter(value => !Number.isNaN(value))
-      const averageBattery = batteryValues.length
-        ? Math.round(batteryValues.reduce((sum, value) => sum + value, 0) / batteryValues.length)
-        : null
-      return `${boundDevices.length} 台设备 · 在线 ${onlineCount} 台${averageBattery !== null ? ` · 平均电量 ${averageBattery}%` : ''}`
+    const memberGuardianCount = (familyGuardians = []) => {
+      return familyGuardians.filter(g => g.role !== 'PRIMARY').length
     }
 
-    const availableDeviceOptions = (selectedIds = [], currentUserId = null) => {
+    /** 一人一台：列表只展示第一台 */
+    const primaryBoundDevice = (row) => {
+      const list = row && row.boundDevices
+      return list && list.length ? list[0] : null
+    }
+
+    /** 列表优先展示设备编号，避免「智能盲杖2」类序号干扰 */
+    const formatDeviceShort = (device) => {
+      if (!device) return ''
+      return device.deviceId || device.deviceName || '未命名'
+    }
+
+    const formatBattery = (batteryLevel) => {
+      const value = Number(batteryLevel)
+      return Number.isNaN(value) ? '-' : `${value}%`
+    }
+
+    const deviceStatusClass = (device) => {
+      if (!device) return 'unknown'
+      if (device.status === '在线') return 'online'
+      if (device.status === '离线') return 'offline'
+      return 'unknown'
+    }
+
+    /** 仅未绑定，或已属于当前持杖用户的设备可选（已占用不可抢绑） */
+    const bindableDevices = (currentUserId = null) => {
       return devices.value.filter(device => {
-        const selected = selectedIds.includes(device.id)
-        const ownedByCurrentUser = currentUserId != null && Number(device.userId) === Number(currentUserId)
-        return !device.userId || selected || ownedByCurrentUser
+        if (device.userId == null || device.userId === '') return true
+        return currentUserId != null && Number(device.userId) === Number(currentUserId)
       })
     }
 
-    const updateDeviceBinding = async (device, userId) => {
-      const payload = {
-        ...device,
-        id: parseInt(device.id),
-        deviceId: String(device.deviceId),
-        userId,
-        batteryLevel: parseInt(device.batteryLevel)
+    const formatDeviceOptionLabel = (device, currentUserId = null) => {
+      const base = `${device.deviceName || device.deviceId || '未命名'}（${device.deviceId}）`
+      if (device.userId == null || device.userId === '') {
+        return `${base} · 未绑定`
       }
-      const response = await apiFetch('/api/devices', {
+      if (currentUserId != null && Number(device.userId) === Number(currentUserId)) {
+        return `${base} · 当前绑定`
+      }
+      return base
+    }
+
+    /** 一人一台：调用专用分配接口（服务端事务内解绑旧设备再绑定） */
+    const syncUserDeviceBindings = async (userId, selectedDeviceId = null) => {
+      const targetId = selectedDeviceId != null && selectedDeviceId !== '' ? Number(selectedDeviceId) : null
+      const response = await apiFetch(`/api/users/${userId}/device`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: targetId })
       })
       const data = await response.json()
       if (data.code !== 200) {
         throw new Error(data.msg || '更新设备绑定失败')
       }
-    }
-
-    const syncUserDeviceBindings = async (userId, selectedDeviceIds = []) => {
-      const selectedSet = new Set(selectedDeviceIds.map(id => Number(id)))
-      const devicesToBind = devices.value.filter(device => selectedSet.has(Number(device.id)) && Number(device.userId) !== Number(userId))
-      const devicesToUnbind = devices.value.filter(device => Number(device.userId) === Number(userId) && !selectedSet.has(Number(device.id)))
-
-      await Promise.all([
-        ...devicesToBind.map(device => updateDeviceBinding(device, Number(userId))),
-        ...devicesToUnbind.map(device => updateDeviceBinding(device, null))
-      ])
     }
 
     const findCreatedUserId = async (username) => {
@@ -328,20 +410,78 @@ export default {
     
     const fetchUsers = async () => {
       try {
-        const [userData, deviceData] = await Promise.all([
+        const [userData, deviceData, guardianData] = await Promise.all([
           fetchJson('/api/users'),
-          fetchJson('/api/devices')
+          fetchJson('/api/devices'),
+          fetchJson('/api/guardians')
         ])
         devices.value = deviceData.data || []
-        users.value = mergeUsersWithDevices(userData.data || [], devices.value)
+        guardians.value = guardianData.data || []
+        users.value = mergeUsersWithDevices(userData.data || [], devices.value, guardians.value)
         total.value = users.value.length
         const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
         if (currentPage.value > maxPage) {
           currentPage.value = maxPage
         }
+        if (familyTargetUser.value) {
+          familyTargetUser.value = users.value.find(u => Number(u.id) === Number(familyTargetUser.value.id)) || null
+        }
       } catch (error) {
         console.error('获取用户列表失败:', error)
         ElMessage.error('获取用户列表失败，请检查后端服务')
+      }
+    }
+
+    const openFamilyDialog = (row) => {
+      familyTargetUser.value = row
+      inviteForm.value = { phone: '', name: '', relation: '家属' }
+      familyDialogVisible.value = true
+    }
+
+    const inviteGuardian = async () => {
+      if (!familyTargetUser.value) return
+      if (!inviteForm.value.phone) {
+        ElMessage.warning('请填写手机号')
+        return
+      }
+      try {
+        const response = await apiFetch('/api/guardians', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: Number(familyTargetUser.value.id),
+            phone: inviteForm.value.phone.trim(),
+            name: inviteForm.value.name || '子监护人',
+            relation: inviteForm.value.relation || '家属',
+            role: 'MEMBER'
+          })
+        })
+        const data = await response.json()
+        if (data.code !== 200) {
+          throw new Error(data.msg || '添加失败')
+        }
+        ElMessage.success('已添加子监护人')
+        inviteForm.value = { phone: '', name: '', relation: '家属' }
+        await fetchUsers()
+      } catch (error) {
+        console.error(error)
+        ElMessage.error(error.message || '添加子监护人失败')
+      }
+    }
+
+    const removeGuardian = async (guardian) => {
+      try {
+        await ElMessageBox.confirm(`确定移除监护人 ${guardian.name || guardian.phone}？`, '提示', { type: 'warning' })
+        const response = await apiFetch(`/api/guardians/${guardian.id}`, { method: 'DELETE' })
+        const data = await response.json()
+        if (data.code !== 200) {
+          throw new Error(data.msg || '移除失败')
+        }
+        ElMessage.success('已移除')
+        await fetchUsers()
+      } catch (error) {
+        if (error === 'cancel' || error === 'close') return
+        ElMessage.error(error.message || '移除失败')
       }
     }
     
@@ -353,12 +493,13 @@ export default {
         phone: '',
         idCard: '',
         address: '',
-        selectedDeviceIds: []
+        selectedDeviceId: null
       }
       addDialogVisible.value = true
     }
     
     const openEditUserDialog = (row) => {
+      const firstBound = (row.boundDevices || [])[0]
       editUserForm.value = {
         id: row.id,
         username: row.username,
@@ -367,7 +508,7 @@ export default {
         phone: row.phone,
         idCard: row.idCard,
         address: row.address,
-        selectedDeviceIds: (row.boundDevices || []).map(device => device.id)
+        selectedDeviceId: firstBound ? firstBound.id : null
       }
       editDialogVisible.value = true
     }
@@ -377,7 +518,7 @@ export default {
         const valid = await addUserFormRef.value.validate()
         if (valid) {
           try {
-            const selectedDeviceIds = [...addUserForm.value.selectedDeviceIds]
+            const selectedDeviceId = addUserForm.value.selectedDeviceId
             const response = await apiFetch('/api/users', {
               method: 'POST',
               headers: {
@@ -394,10 +535,10 @@ export default {
             })
             const data = await response.json()
             if (data.code === 200) {
-              if (selectedDeviceIds.length) {
+              if (selectedDeviceId != null && selectedDeviceId !== '') {
                 const createdUserId = await findCreatedUserId(addUserForm.value.username)
                 if (createdUserId) {
-                  await syncUserDeviceBindings(createdUserId, selectedDeviceIds)
+                  await syncUserDeviceBindings(createdUserId, selectedDeviceId)
                 }
               }
               ElMessage.success('添加用户成功')
@@ -420,7 +561,7 @@ export default {
         if (valid) {
           try {
             // 转换数据类型
-            const selectedDeviceIds = [...editUserForm.value.selectedDeviceIds]
+            const selectedDeviceId = editUserForm.value.selectedDeviceId
             const userData = {
               id: parseInt(editUserForm.value.id),
               username: editUserForm.value.username,
@@ -440,7 +581,7 @@ export default {
             })
             const data = await response.json()
             if (data.code === 200) {
-              await syncUserDeviceBindings(userData.id, selectedDeviceIds)
+              await syncUserDeviceBindings(userData.id, selectedDeviceId)
               ElMessage.success('更新用户成功')
               editDialogVisible.value = false
               fetchUsers()
@@ -456,13 +597,17 @@ export default {
     }
     
     const deleteUser = async (id) => {
+      const row = users.value.find(user => Number(user.id) === Number(id))
+      if (row && primaryBoundDevice(row)) {
+        ElMessage.warning('该用户已绑定设备，请先解绑后再删除')
+        return
+      }
       ElMessageBox.confirm('确定要删除该用户吗？', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         type: 'warning'
       }).then(async () => {
         try {
-          // 调用后端API删除用户
           const response = await apiFetch(`/api/users/${id}`, {
             method: 'DELETE'
           })
@@ -471,7 +616,7 @@ export default {
             ElMessage.success('删除用户成功')
             fetchUsers()
           } else {
-            ElMessage.error('删除用户失败: ' + data.msg)
+            ElMessage.error('删除用户失败: ' + (data.msg || ''))
           }
         } catch (error) {
           console.error('删除用户失败:', error)
@@ -527,9 +672,20 @@ export default {
       addUser,
       updateUser,
       deleteUser,
-      availableDeviceOptions,
-      getDeviceTagType,
-      formatDeviceSummary,
+      bindableDevices,
+      formatDeviceOptionLabel,
+      primaryBoundDevice,
+      formatDeviceShort,
+      formatBattery,
+      deviceStatusClass,
+      formatPrimaryGuardian,
+      memberGuardianCount,
+      familyDialogVisible,
+      familyTargetUser,
+      inviteForm,
+      openFamilyDialog,
+      inviteGuardian,
+      removeGuardian,
       handleSizeChange,
       handleCurrentChange
     }
@@ -546,7 +702,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
+  background: var(--app-page-bg, #f5f7fa);
 }
 
 .page-hero {
@@ -641,25 +797,103 @@ export default {
   padding-bottom: 14px;
 }
 
-.device-list {
+.device-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.status-dot.online {
+  background: #22c55e;
+}
+
+.status-dot.offline {
+  background: #94a3b8;
+}
+
+.status-dot.unknown {
+  background: #f59e0b;
+}
+
+.device-inline-text {
+  min-width: 0;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-inline-meta {
+  margin-left: 6px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.device-empty {
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.delete-disabled-wrap {
+  display: inline-flex;
+  margin-left: 12px;
+}
+
+.family-cell {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
+  min-width: 0;
 }
 
-.device-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.family-primary {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.device-tag {
-  margin: 0;
-}
-
-.device-summary {
+.family-meta {
+  color: #94a3b8;
   font-size: 12px;
-  color: #64748b;
+}
+
+.family-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.family-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.family-role-tag {
+  margin-left: 8px;
+}
+
+.family-row-meta {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
 }
 
 .pagination {

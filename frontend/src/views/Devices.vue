@@ -136,9 +136,9 @@
           <el-input v-model="addDeviceForm.deviceId" placeholder="请输入设备ID" />
         </el-form-item>
         <el-form-item label="用户ID" prop="userId">
-          <el-select v-model="addDeviceForm.userId" placeholder="请选择绑定用户" clearable style="width: 100%">
+          <el-select v-model="addDeviceForm.userId" placeholder="仅可选尚未绑设备的用户" clearable style="width: 100%">
             <el-option
-              v-for="user in usersOptions"
+              v-for="user in addBindUserOptions"
               :key="user.id"
               :label="`${user.name}（${user.username}）`"
               :value="user.id"
@@ -170,9 +170,14 @@
           <el-input v-model="editDeviceForm.deviceId" placeholder="请输入设备ID" />
         </el-form-item>
         <el-form-item label="用户ID" prop="userId">
-          <el-select v-model="editDeviceForm.userId" placeholder="请选择绑定用户" clearable style="width: 100%">
+          <el-select
+            v-model="editDeviceForm.userId"
+            :placeholder="editDeviceForm.userId ? '清空即可解绑；已绑定不可直接改给他人' : '仅可选尚未绑设备的用户'"
+            clearable
+            style="width: 100%"
+          >
             <el-option
-              v-for="user in usersOptions"
+              v-for="user in editBindUserOptions"
               :key="user.id"
               :label="`${user.name}（${user.username}）`"
               :value="user.id"
@@ -298,6 +303,37 @@ export default {
       return Number.isNaN(value) ? null : value
     }
 
+    /** 已占用用户（一人一台）；编辑时可排除当前设备 */
+    const occupiedUserIds = (excludeDeviceId = null) => {
+      const set = new Set()
+      devices.value.forEach(device => {
+        if (device.userId == null || device.userId === '') return
+        if (excludeDeviceId != null && Number(device.id) === Number(excludeDeviceId)) return
+        set.add(Number(device.userId))
+      })
+      return set
+    }
+
+    /** 添加设备：只列出尚未绑设备的持杖用户 */
+    const addBindUserOptions = computed(() => {
+      const occupied = occupiedUserIds()
+      return usersOptions.value.filter(user => !occupied.has(Number(user.id)))
+    })
+
+    /**
+     * 编辑设备：已绑定时只能保留当前用户或清空解绑；
+     * 未绑定时只能选尚未绑设备的用户（不可抢绑）
+     */
+    const editBindUserOptions = computed(() => {
+      const form = editDeviceForm.value
+      const currentUid = form.userId
+      if (currentUid != null && currentUid !== '') {
+        return usersOptions.value.filter(user => Number(user.id) === Number(currentUid))
+      }
+      const occupied = occupiedUserIds(form.id)
+      return usersOptions.value.filter(user => !occupied.has(Number(user.id)))
+    })
+
     const fetchUsersOptions = async () => {
       try {
         const data = await fetchJson('/api/users')
@@ -371,9 +407,36 @@ export default {
     const openEditDeviceDialog = (row) => {
       editDeviceForm.value = {
         ...row,
-        userId: row.userId ?? null
+        userId: row.userId ?? null,
+        originalUserId: row.userId ?? null
       }
       editDialogVisible.value = true
+    }
+
+    const syncDeviceOwnership = async (devicePk, previousUserId, nextUserId) => {
+      const prev = previousUserId == null || previousUserId === '' ? null : Number(previousUserId)
+      const next = nextUserId == null || nextUserId === '' ? null : Number(nextUserId)
+      if (prev === next || (prev == null && next == null)) {
+        return
+      }
+      if (next == null) {
+        const response = await apiFetch(`/api/devices/${devicePk}/unbind`, { method: 'POST' })
+        const data = await response.json()
+        if (data.code !== 200) throw new Error(data.msg || '解绑失败')
+        return
+      }
+      if (prev != null) {
+        const unbindRes = await apiFetch(`/api/devices/${devicePk}/unbind`, { method: 'POST' })
+        const unbindData = await unbindRes.json()
+        if (unbindData.code !== 200) throw new Error(unbindData.msg || '解绑失败')
+      }
+      const bindRes = await apiFetch(`/api/devices/${devicePk}/bind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: next })
+      })
+      const bindData = await bindRes.json()
+      if (bindData.code !== 200) throw new Error(bindData.msg || '绑定失败')
     }
     
     const addDevice = async () => {
@@ -417,33 +480,35 @@ export default {
         const valid = await editDeviceFormRef.value.validate()
         if (valid) {
           try {
-            // 转换数据类型
+            const devicePk = parseInt(editDeviceForm.value.id)
             const deviceData = {
-              ...editDeviceForm.value,
+              id: devicePk,
               deviceId: editDeviceForm.value.deviceId.toString(),
-              userId: normalizeUserId(editDeviceForm.value.userId),
+              deviceName: editDeviceForm.value.deviceName || editDeviceForm.value.deviceId.toString(),
               batteryLevel: parseInt(editDeviceForm.value.batteryLevel),
-              id: parseInt(editDeviceForm.value.id)
+              status: editDeviceForm.value.status
             }
-            // 调用后端API更新设备
             const response = await apiFetch('/api/devices', {
               method: 'PUT',
-              headers: {
-                'Content-Type': 'application/json'
-              },
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(deviceData)
             })
             const data = await response.json()
-            if (data.code === 200) {
-              ElMessage.success('更新设备成功')
-              editDialogVisible.value = false
-              fetchDevices()
-            } else {
+            if (data.code !== 200) {
               ElMessage.error('更新设备失败: ' + data.msg)
+              return
             }
+            await syncDeviceOwnership(
+              devicePk,
+              editDeviceForm.value.originalUserId,
+              normalizeUserId(editDeviceForm.value.userId)
+            )
+            ElMessage.success('更新设备成功')
+            editDialogVisible.value = false
+            fetchDevices()
           } catch (error) {
             console.error('更新设备失败:', error)
-            ElMessage.error('更新设备失败')
+            ElMessage.error(error.message || '更新设备失败')
           }
         }
       }
@@ -530,6 +595,8 @@ export default {
     return {
       devices,
       usersOptions,
+      addBindUserOptions,
+      editBindUserOptions,
       loading,
       loadError,
       reloadDevices,

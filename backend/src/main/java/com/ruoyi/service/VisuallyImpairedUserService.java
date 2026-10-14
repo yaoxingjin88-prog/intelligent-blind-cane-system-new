@@ -2,6 +2,7 @@ package com.ruoyi.service;
 
 import lombok.RequiredArgsConstructor;
 import com.ruoyi.entity.VisuallyImpairedUser;
+import com.ruoyi.mapper.CaneDeviceMapper;
 import com.ruoyi.mapper.VisuallyImpairedUserMapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -16,7 +17,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class VisuallyImpairedUserService {
     private final VisuallyImpairedUserMapper userMapper;
-
+    private final CaneDeviceMapper caneDeviceMapper;
     private final PasswordEncoder passwordEncoder;
 
     /**
@@ -57,7 +58,16 @@ public class VisuallyImpairedUserService {
         userMapper.insert(user);
     }
 
+    /**
+     * 删除用户：已绑定设备时禁止删除，需先解绑
+     */
     public void deleteUser(Long id) {
+        if (id == null) {
+            throw new IllegalArgumentException("用户 ID 不能为空");
+        }
+        if (caneDeviceMapper.countByUserId(id) > 0) {
+            throw new IllegalArgumentException("该用户已绑定设备，请先解绑后再删除");
+        }
         userMapper.delete(id);
     }
 

@@ -5,6 +5,7 @@ import com.ruoyi.entity.CaneDevice;
 import com.ruoyi.entity.Guardian;
 import com.ruoyi.entity.Result;
 import com.ruoyi.entity.SensorData;
+import com.ruoyi.service.GuardianFamilyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +27,7 @@ import java.util.Map;
 public class MiniDeviceController {
 
     private final MiniSupport support;
+    private final GuardianFamilyService guardianFamilyService;
 
     /**
      * 绑定设备 POST /api/mini/devices/bind
@@ -44,21 +46,18 @@ public class MiniDeviceController {
             throw new IllegalArgumentException("设备ID不能为空");
         }
 
-        Long userId = null;
-        if (token != null && !token.trim().isEmpty()) {
-            Guardian guardian = support.resolveGuardian(token);
-            if (guardian != null && guardian.getUserId() != null) {
-                userId = guardian.getUserId();
-            }
+        Guardian guardian = support.requireGuardian(token);
+        guardianFamilyService.requirePrimary(guardian);
+        if (guardian.getUserId() == null) {
+            throw new IllegalArgumentException("主监护人未关联持杖用户，无法绑定设备");
         }
 
         CaneDevice device = new CaneDevice();
         device.setDeviceId(deviceId.trim());
         device.setDeviceName(deviceName != null ? deviceName.trim() : "智能盲杖");
-        device.setUserId(userId != null ? userId : 1L);
+        device.setUserId(guardian.getUserId());
         device.setBatteryLevel(100);
         device.setStatus("在线");
-        // 调用业务层完成绑定入库
         support.caneDeviceService().addDevice(device);
         return Result.success(device);
     }
@@ -97,8 +96,17 @@ public class MiniDeviceController {
      */
     @Operation(summary = "解绑设备")
     @DeleteMapping("/devices/{id}")
-    public Result unbindDevice(@PathVariable Long id) {
-        // 调用业务层删除设备
+    public Result unbindDevice(@PathVariable Long id,
+                               @RequestHeader(value = "Authorization", required = false) String token) {
+        Guardian guardian = support.requireGuardian(token);
+        guardianFamilyService.requirePrimary(guardian);
+        CaneDevice device = support.caneDeviceService().getDeviceById(id);
+        if (device == null) {
+            throw new IllegalArgumentException("设备不存在");
+        }
+        if (guardian.getUserId() == null || !guardian.getUserId().equals(device.getUserId())) {
+            throw new IllegalArgumentException("只能解绑本家庭持杖用户的设备");
+        }
         support.caneDeviceService().deleteDevice(id);
         return Result.success();
     }

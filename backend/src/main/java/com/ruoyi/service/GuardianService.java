@@ -30,8 +30,20 @@ public class GuardianService {
         return guardianMapper.getGuardianById(id);
     }
 
-    /** 新增监护人 */
+    /** 按持杖用户查家庭监护人列表 */
+    public List<Guardian> getGuardiansByUserId(Long userId) {
+        return guardianMapper.getGuardiansByUserId(userId);
+    }
+
+    /** 新增监护人（未指定角色时默认主监护人，便于后台建档） */
     public void addGuardian(Guardian guardian) {
+        if (guardian.getRole() == null || guardian.getRole().isBlank()) {
+            if (guardian.getUserId() != null && guardianMapper.countPrimaryByUserId(guardian.getUserId()) > 0) {
+                guardian.setRole(Guardian.ROLE_MEMBER);
+            } else {
+                guardian.setRole(Guardian.ROLE_PRIMARY);
+            }
+        }
         guardianMapper.insert(guardian);
     }
 
@@ -42,6 +54,14 @@ public class GuardianService {
 
     /** 更新监护人信息 */
     public void updateGuardian(Guardian guardian) {
+        if (guardian.getRole() == null || guardian.getRole().isBlank()) {
+            Guardian existing = guardianMapper.getGuardianById(guardian.getId());
+            if (existing != null) {
+                guardian.setRole(existing.getRole());
+            } else {
+                guardian.setRole(Guardian.ROLE_MEMBER);
+            }
+        }
         guardianMapper.update(guardian);
     }
 

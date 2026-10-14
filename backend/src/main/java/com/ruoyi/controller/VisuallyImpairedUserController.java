@@ -1,8 +1,10 @@
 package com.ruoyi.controller;
 
 import lombok.RequiredArgsConstructor;
+import com.ruoyi.dto.UserDeviceAssignRequest;
 import com.ruoyi.entity.Result;
 import com.ruoyi.entity.VisuallyImpairedUser;
+import com.ruoyi.service.CaneDeviceService;
 import com.ruoyi.service.VisuallyImpairedUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,6 +22,7 @@ import java.util.List;
 public class VisuallyImpairedUserController {
 
     private final VisuallyImpairedUserService userService;
+    private final CaneDeviceService caneDeviceService;
 
     /**
      * 用户列表 GET /api/users
@@ -76,6 +79,18 @@ public class VisuallyImpairedUserController {
     public Result updateUser(@RequestBody VisuallyImpairedUser user) {
         // 调用业务层更新
         userService.updateUser(user);
+        return Result.success();
+    }
+
+    /**
+     * 为用户分配/更换/清空绑定设备 PUT /api/users/{id}/device
+     * body.deviceId 为 cane_device 主键；传 null 表示解绑
+     */
+    @Operation(summary = "分配用户设备", description = "一人一台：绑定指定设备或清空绑定")
+    @PutMapping("/{id}/device")
+    public Result assignDevice(@PathVariable Long id, @RequestBody(required = false) UserDeviceAssignRequest request) {
+        Long devicePk = request != null ? request.getDeviceId() : null;
+        caneDeviceService.assignUserDevice(id, devicePk);
         return Result.success();
     }
 }

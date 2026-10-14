@@ -6,7 +6,7 @@
       <aside class="sidebar" :class="{ 'sidebar--collapsed': isCollapse }">
         <!-- Logo 区 -->
         <div class="sidebar-logo" @click="isCollapse = !isCollapse">
-          <el-icon :size="26" style="color: #60a5fa;"><Guide /></el-icon>
+          <el-icon :size="26" class="sidebar-logo__icon"><Guide /></el-icon>
           <span v-show="!isCollapse" class="sidebar-logo__text">智能盲杖</span>
         </div>
         <!-- 导航菜单 -->
@@ -17,8 +17,8 @@
             :collapse="isCollapse"
             :collapse-transition="false"
             background-color="transparent"
-            text-color="#94a3b8"
-            active-text-color="#ffffff"
+            text-color="var(--app-sidebar-text)"
+            active-text-color="var(--app-sidebar-text-active)"
             @select="handleMenuSelect"
           >
             <el-menu-item index="/">
@@ -315,7 +315,7 @@ html, body, #app {
 .app-container {
   height: 100%;
   width: 100%;
-  background-color: #f0f2f5;
+  background-color: var(--app-page-bg);
 }
 
 /* ===== Layout ===== */
@@ -325,15 +325,15 @@ html, body, #app {
   width: 100%;
 }
 
-/* ===== Sidebar ===== */
+/* ===== Sidebar：简洁深灰 + 主色高亮 ===== */
 .sidebar {
   width: 240px;
-  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+  background: var(--app-sidebar-bg);
   display: flex;
   flex-direction: column;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 20;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+  box-shadow: 1px 0 0 var(--app-border);
   flex-shrink: 0;
 }
 
@@ -358,19 +358,23 @@ html, body, #app {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.15);
   cursor: pointer;
   gap: 10px;
-  transition: all 0.3s;
+  transition: background 0.2s;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .sidebar-logo:hover {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.sidebar-logo__icon {
+  color: var(--app-primary);
 }
 
 .sidebar-logo__text {
-  color: #ffffff;
+  color: #f8fafc;
   font-size: 17px;
   font-weight: 700;
   letter-spacing: 1px;
@@ -401,20 +405,25 @@ html, body, #app {
   height: 48px;
   line-height: 48px;
   margin: 2px 8px;
-  border-radius: 10px;
-  transition: all 0.25s ease;
+  border-radius: 8px;
+  transition: background 0.2s ease, color 0.2s ease;
   font-size: 14px;
 }
 
 .sidebar-menu .el-menu-item:hover {
-  background-color: rgba(255, 255, 255, 0.06) !important;
+  background-color: var(--app-sidebar-hover) !important;
   color: #e2e8f0 !important;
 }
 
 .sidebar-menu .el-menu-item.is-active {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
-  color: #ffffff !important;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  background: var(--app-primary) !important;
+  color: var(--app-sidebar-text-active) !important;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.sidebar-menu .el-menu-item.is-active .el-icon {
+  color: var(--app-sidebar-text-active) !important;
 }
 
 .sidebar-menu .el-menu-item .el-icon {
@@ -433,10 +442,8 @@ html, body, #app {
 /* ===== Header ===== */
 .app-header {
   height: 60px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: var(--app-header-bg);
+  border-bottom: 1px solid var(--app-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -459,7 +466,7 @@ html, body, #app {
 }
 
 .collapse-btn:hover {
-  color: #3b82f6;
+  color: var(--app-primary);
 }
 
 .app-header__right {
@@ -480,7 +487,7 @@ html, body, #app {
 }
 
 .notification-trigger:hover {
-  background: rgba(59, 130, 246, 0.08);
+  background: var(--app-primary-soft);
 }
 
 .header-icon {
@@ -490,7 +497,7 @@ html, body, #app {
 }
 
 .header-icon:hover {
-  color: #3b82f6;
+  color: var(--app-primary);
 }
 
 .header-badge .el-badge__content {
@@ -578,7 +585,7 @@ html, body, #app {
 }
 
 .user-avatar-wrapper:hover {
-  background: rgba(59, 130, 246, 0.06);
+  background: var(--app-primary-soft);
 }
 
 .user-name {
@@ -592,7 +599,7 @@ html, body, #app {
   flex: 1;
   overflow-y: auto;
   padding: 0;
-  background: linear-gradient(135deg, #f0f2f5 0%, #e8ecf1 100%);
+  background: var(--app-page-bg);
 }
 
 /* Smooth scrollbar */

@@ -6,6 +6,7 @@ import com.ruoyi.dto.MiniSmsLoginRequest;
 import com.ruoyi.entity.Guardian;
 import com.ruoyi.entity.Result;
 import com.ruoyi.entity.VisuallyImpairedUser;
+import com.ruoyi.service.GuardianFamilyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -25,6 +26,7 @@ import java.util.Map;
 public class MiniAuthController {
 
     private final MiniSupport support;
+    private final GuardianFamilyService guardianFamilyService;
 
     /**
      * 小程序登录接口 POST /api/mini/login
@@ -103,14 +105,11 @@ public class MiniAuthController {
             return Result.error(400, "该手机号已注册");
         }
 
-        Guardian guardian = new Guardian();
-        guardian.setPhone(phone);
-        guardian.setName("新监护人");
-        guardian.setRelation("未设置");
-        // 调用业务层创建监护人
-        support.guardianService().addGuardian(guardian);
-        log.info("auth.mini.register success phone={}", maskPhone(phone));
-        return Result.success("注册成功");
+        // 注册即创建家庭：持杖用户占位 + 当前账号为主监护人
+        Guardian guardian = guardianFamilyService.bootstrapPrimaryFamily(phone, "新监护人");
+        log.info("auth.mini.register success phone={} guardianId={} userId={} role={}",
+                maskPhone(phone), guardian.getId(), guardian.getUserId(), guardian.getRole());
+        return Result.success("注册成功，您已成为主监护人");
     }
 
     /**

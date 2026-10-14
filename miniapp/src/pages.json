@@ -43,6 +43,13 @@
       }
     },
     {
+      "path": "pages/subpages/family-members/family-members",
+      "style": {
+        "navigationBarTitleText": "家庭监护成员",
+        "navigationStyle": "default"
+      }
+    },
+    {
       "path": "pages/subpages/dnd-settings/dnd-settings",
       "style": {
         "navigationBarTitleText": "免打扰设置",

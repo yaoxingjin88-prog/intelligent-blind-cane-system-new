@@ -1,0 +1,25 @@
+/**
+ * 管理端统一主题：简洁灰蓝
+ * 侧栏、主按钮、链接、选中态共用同一主色
+ */
+:root {
+  --app-primary: #3b82f6;
+  --app-primary-dark: #2563eb;
+  --app-primary-soft: #eff6ff;
+  --app-sidebar-bg: #1e293b;
+  --app-sidebar-hover: rgba(255, 255, 255, 0.08);
+  --app-sidebar-text: #94a3b8;
+  --app-sidebar-text-active: #ffffff;
+  --app-page-bg: #f5f7fa;
+  --app-header-bg: #ffffff;
+  --app-border: #e5e7eb;
+
+  /* Element Plus 主色跟随 */
+  --el-color-primary: #3b82f6;
+  --el-color-primary-light-3: #60a5fa;
+  --el-color-primary-light-5: #93c5fd;
+  --el-color-primary-light-7: #bfdbfe;
+  --el-color-primary-light-8: #dbeafe;
+  --el-color-primary-light-9: #eff6ff;
+  --el-color-primary-dark-2: #2563eb;
+}

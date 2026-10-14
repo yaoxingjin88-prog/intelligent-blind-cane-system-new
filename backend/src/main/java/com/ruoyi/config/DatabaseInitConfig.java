@@ -54,6 +54,30 @@ public class DatabaseInitConfig {
             // 步骤4：脏数据修复
             jdbcTemplate.update("UPDATE electronic_fence SET fence_name = '默认安全区' WHERE fence_name IS NULL OR REPLACE(fence_name, '?', '') = ''");
             jdbcTemplate.update("UPDATE cane_device SET status = '在线' WHERE status = '??'");
+            // 步骤5：监护人角色（主监护人 / 子监护人）
+            addColumnIfMissing(jdbcTemplate, "guardian", "role",
+                    "ALTER TABLE guardian ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'PRIMARY' COMMENT 'PRIMARY主监护人 MEMBER子监护人' AFTER relation");
+            // 同一持杖用户：id 最小者为主监护人，其余为子监护人（幂等）
+            jdbcTemplate.update(
+                    "UPDATE guardian g " +
+                            "INNER JOIN (SELECT user_id, MIN(id) AS primary_id FROM guardian WHERE user_id IS NOT NULL GROUP BY user_id) t " +
+                            "ON g.user_id = t.user_id " +
+                            "SET g.role = CASE WHEN g.id = t.primary_id THEN 'PRIMARY' ELSE 'MEMBER' END"
+            );
+            // 步骤6：设备可解绑（user_id 可空）+ 历史一人多绑收敛为只保留最早一台
+            try {
+                jdbcTemplate.execute("ALTER TABLE cane_device MODIFY COLUMN user_id BIGINT NULL COMMENT '持杖用户ID，可空表示未绑定'");
+            } catch (Exception ignored) {
+                // 已是可空或无权限时跳过
+            }
+            jdbcTemplate.update(
+                    "UPDATE cane_device d " +
+                            "INNER JOIN ( " +
+                            "  SELECT user_id, MIN(id) AS keep_id FROM cane_device " +
+                            "  WHERE user_id IS NOT NULL GROUP BY user_id HAVING COUNT(*) > 1 " +
+                            ") t ON d.user_id = t.user_id AND d.id <> t.keep_id " +
+                            "SET d.user_id = NULL"
+            );
         };
     }
 

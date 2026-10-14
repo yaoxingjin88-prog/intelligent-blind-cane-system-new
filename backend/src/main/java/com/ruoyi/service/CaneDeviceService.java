@@ -6,6 +6,7 @@ import com.ruoyi.entity.SensorData;
 import com.ruoyi.mapper.CaneDeviceMapper;
 import com.ruoyi.mapper.SensorDataMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -86,8 +87,12 @@ public class CaneDeviceService {
         return devices;
     }
 
-    /** 新增设备档案 */
+    /** 新增设备档案（可带初始归属；校验设备号与一人一台） */
     public void addDevice(CaneDevice device) {
+        validateDeviceCodeUnique(device, null);
+        if (device.getUserId() != null && deviceMapper.countByUserId(device.getUserId()) > 0) {
+            throw new IllegalArgumentException("该用户已绑定一台设备，每人仅可绑定一台");
+        }
         deviceMapper.insert(device);
     }
 
@@ -96,9 +101,102 @@ public class CaneDeviceService {
         deviceMapper.delete(id);
     }
 
-    /** 更新设备档案（名称、电量、状态等） */
+    /**
+     * 更新设备档案（编号/名称/电量/状态）。
+     * 归属 userId 不会被本接口修改，请使用 bind / unbind / assignUserDevice。
+     */
     public void updateDevice(CaneDevice device) {
+        if (device == null || device.getId() == null) {
+            throw new IllegalArgumentException("设备信息不能为空");
+        }
+        CaneDevice existing = deviceMapper.getDeviceById(device.getId());
+        if (existing == null) {
+            throw new IllegalArgumentException("设备不存在");
+        }
+        validateDeviceCodeUnique(device, device.getId());
+        if (device.getDeviceName() == null) {
+            device.setDeviceName(existing.getDeviceName());
+        }
         deviceMapper.update(device);
+    }
+
+    /**
+     * 将设备绑定到用户（设备须未绑定；用户须尚无设备）
+     */
+    @Transactional
+    public void bindDeviceToUser(Long devicePk, Long userId) {
+        if (devicePk == null || userId == null) {
+            throw new IllegalArgumentException("设备与用户不能为空");
+        }
+        CaneDevice device = deviceMapper.getDeviceById(devicePk);
+        if (device == null) {
+            throw new IllegalArgumentException("设备不存在");
+        }
+        if (device.getUserId() != null) {
+            if (device.getUserId().equals(userId)) {
+                return;
+            }
+            throw new IllegalArgumentException("该设备已绑定其他用户，请先解绑后再绑定");
+        }
+        if (deviceMapper.countByUserId(userId) > 0) {
+            throw new IllegalArgumentException("该用户已绑定一台设备，每人仅可绑定一台");
+        }
+        deviceMapper.updateUserId(devicePk, userId);
+    }
+
+    /** 解除设备与用户的绑定 */
+    @Transactional
+    public void unbindDevice(Long devicePk) {
+        if (devicePk == null) {
+            throw new IllegalArgumentException("设备ID不能为空");
+        }
+        CaneDevice device = deviceMapper.getDeviceById(devicePk);
+        if (device == null) {
+            throw new IllegalArgumentException("设备不存在");
+        }
+        deviceMapper.updateUserId(devicePk, null);
+    }
+
+    /**
+     * 用户侧分配设备：先清空该用户旧绑定，再绑到指定设备（devicePk 为 null 则仅解绑）
+     */
+    @Transactional
+    public void assignUserDevice(Long userId, Long devicePk) {
+        if (userId == null) {
+            throw new IllegalArgumentException("用户ID不能为空");
+        }
+        List<CaneDevice> owned = deviceMapper.getDevicesByUserId(userId);
+        for (CaneDevice ownedDevice : owned) {
+            if (devicePk == null || !ownedDevice.getId().equals(devicePk)) {
+                deviceMapper.updateUserId(ownedDevice.getId(), null);
+            }
+        }
+        if (devicePk == null) {
+            return;
+        }
+        CaneDevice target = deviceMapper.getDeviceById(devicePk);
+        if (target == null) {
+            throw new IllegalArgumentException("设备不存在");
+        }
+        if (target.getUserId() != null && !target.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("该设备已绑定其他用户，无法占用");
+        }
+        if (target.getUserId() == null) {
+            deviceMapper.updateUserId(devicePk, userId);
+        }
+    }
+
+    void validateDeviceCodeUnique(CaneDevice device, Long selfId) {
+        if (device == null) {
+            throw new IllegalArgumentException("设备信息不能为空");
+        }
+        if (device.getDeviceId() == null || device.getDeviceId().isBlank()) {
+            return;
+        }
+        CaneDevice sameCode = deviceMapper.getDeviceByDeviceId(device.getDeviceId().trim());
+        if (sameCode != null && (selfId == null || !sameCode.getId().equals(selfId))) {
+            throw new IllegalArgumentException("设备编号已被占用，无法重复使用");
+        }
     }
 
     /**
